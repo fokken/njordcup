@@ -1,0 +1,22 @@
+[
+  {
+    "id": "sql_injection",
+    "expected_cwes": ["CWE-89"],
+    "source": "from flask import Flask, request\nimport sqlite3\napp = Flask(__name__)\n@app.get('/users')\ndef users():\n    name = request.args.get('name', '')\n    db = sqlite3.connect('users.db')\n    return str(db.execute(\"SELECT name FROM users WHERE name = '\" + name + \"'\").fetchall())\n"
+  },
+  {
+    "id": "sql_parameterized",
+    "expected_cwes": [],
+    "source": "from flask import Flask, request\nimport sqlite3\napp = Flask(__name__)\n@app.get('/users')\ndef users():\n    name = request.args.get('name', '')\n    db = sqlite3.connect('users.db')\n    return str(db.execute('SELECT name FROM users WHERE name = ?', (name,)).fetchall())\n"
+  },
+  {
+    "id": "shell_injection",
+    "expected_cwes": ["CWE-78"],
+    "source": "from flask import Flask, request\nimport subprocess\napp = Flask(__name__)\n@app.get('/lookup')\ndef lookup():\n    host = request.args.get('host', 'localhost')\n    return subprocess.check_output('nslookup ' + host, shell=True, text=True)\n"
+  },
+  {
+    "id": "shell_fixed_allowlist",
+    "expected_cwes": [],
+    "source": "from flask import Flask, request, abort\nimport subprocess\napp = Flask(__name__)\n@app.get('/lookup')\ndef lookup():\n    host = request.args.get('host', 'localhost')\n    if host not in {'localhost', 'example.com'}:\n        abort(400)\n    return subprocess.check_output(['nslookup', host], shell=False, text=True)\n"
+  }
+]
