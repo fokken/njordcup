@@ -42,6 +42,8 @@ files are outside the changed-file selection.
 
 Exit codes: `0` completed without findings, saved flyover/import, index/dry run or
 successful summary; `1` completed with findings; `2` incomplete investigation/error.
+Cancellation uses `130` for Ctrl+C and `143` for SIGTERM; an exhausted `--max-seconds`
+budget uses `124`. These stops retain completed checkpoints and report `stop_reason`.
 For `--investigate-all`, any inconclusive result returns `2`. Read the JSON status:
 a successful summary command does not mean the audit itself is complete.
 

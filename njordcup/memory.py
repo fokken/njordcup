@@ -14,16 +14,26 @@ def save_memory(path, memory):
         with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
             temporary = handle.name
             json.dump(memory, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
+        if hasattr(os, "O_DIRECTORY"):
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     finally:
         if temporary and os.path.exists(temporary):
             os.unlink(temporary)
 
 
 def area_progress(memory):
+    from .adjudication import ADJUDICATION_VERSION
     latest = {r["area_id"]: r for r in memory.get("reviews", [])}
     return [{"id": i, "title": area["title"],
-             "status": latest[i]["report"]["status"] if i in latest else "unreviewed",
+             "status": ("incomplete" if area.get("sarif_candidates") and latest[i]["report"].get("adjudication_version") != ADJUDICATION_VERSION
+                        else latest[i]["report"]["status"]) if i in latest else "unreviewed",
              "attempts": sum(r["area_id"] == i for r in memory.get("reviews", [])),
              "findings": len(latest[i]["report"].get("findings", [])) if i in latest else 0}
             for i, area in enumerate(memory["overview"]["areas"], 1)]
@@ -86,7 +96,7 @@ def summarize(memory):
     severity = {level: sum(f["severity"] == level for f in findings.values()) for level in ("critical", "high", "medium", "low")}
     attempts = memory.get("reviews", [])
     usage = {k: sum(a["report"].get("usage", {}).get(k, 0) for a in attempts)
-             for k in ("calls", "cache_hits", "input_tokens", "output_tokens")}
+             for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
     from .sarif import scan_summary
     scanner = scan_summary(memory)
     return {"status": "summary", "audit_status": "complete" if progress and counts["complete"] == len(progress) and not memory.get("coverage", {}).get("pages_pending") and not (scanner and scanner["counts"]["inconclusive"]) else "in_progress",

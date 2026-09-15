@@ -11,6 +11,16 @@ SARIF assessments and usage. Incomplete reviews resume completed chunks when the
 source and observed dependencies still match. Completed areas may be deliberately
 reviewed again. Old attempts remain in history.
 
+Completed batches are checkpointed before the next request. Cancellation and exhausted
+retries save an incomplete report for the current area and stop further work.
+Writes flush and sync a temporary file before atomic replacement, and sync the parent
+directory where supported. A process interruption leaves the previous committed
+snapshot available; work since the last successful checkpoint may need repeating.
+Signal handlers do not interrupt a memory write halfway through.
+
+Retries are included in saved per-attempt usage. SARIF decisions are versioned against
+the evidence policy; a stronger policy requires older decisions to be re-adjudicated.
+
 For component-mapped audits, edits invalidate affected components and reverse
 import/call dependents. Unaffected review attempts and component summaries carry
 forward to the new snapshot. Read-context hashes invalidate additional affected

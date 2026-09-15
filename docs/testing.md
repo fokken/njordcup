@@ -12,6 +12,8 @@ python3 -m njordcup.evaluate --model YOUR_MODEL --base-url http://localhost:1143
 
 Tests use mocked model responses and include a 250k-line index, checkpoint resumption,
 component invalidation, evidence validation and all-results SARIF accounting.
+Failure-injection tests cover bounded retries, call-budget accounting, timeouts,
+cancellation/resumption, rule/CWE mismatches, and missing or fabricated counterevidence.
 [evals/cases.json](../evals/cases.json) contains vulnerable/fixed SQL and shell-injection smoke fixtures;
 the evaluation command makes live model calls and reports CWE-level precision/recall,
 incomplete cases and usage. Four fixtures are not a production benchmark. No live

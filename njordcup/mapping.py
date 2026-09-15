@@ -5,6 +5,7 @@ import json
 from .index import affected_files
 from .memory import save_memory
 from .provider import ReviewError
+from .errors import RunStopped
 
 
 def hierarchical_flyover(sources, targets, provider, path, index, refresh=False, analyze=True):
@@ -117,6 +118,8 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
         except ReviewError as exc:
             memory["mapping_errors"].append(str(exc))
             update()
+            if isinstance(exc, RunStopped):
+                raise
             break
         update()
     return memory, not pending and not changed

@@ -1,10 +1,12 @@
 """Import untrusted SARIF as investigation candidates, never as confirmed issues."""
 import hashlib
 import json
+import re
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlsplit
 
 from .provider import ReviewError
+from .adjudication import current_assessment
 
 
 def load_sarif(path, root, sources):
@@ -58,16 +60,21 @@ def load_sarif(path, root, sources):
                 for thread in flow.get("threadFlows", []):
                     related.extend(location(l.get("location", {})) for l in thread.get("locations", []))
             rule_id = result.get("ruleId")
+            rules = run.get("tool", {}).get("driver", {}).get("rules", [])
             if not rule_id:
-                rules = run.get("tool", {}).get("driver", {}).get("rules", [])
                 number = result.get("ruleIndex")
                 rule_id = rules[number].get("id") if type(number) is int and 0 <= number < len(rules) else "unknown"
+            rule = next((r for r in rules if r.get("id") == rule_id), {})
+            cwes = sorted(set(re.findall(r"CWE-\d+", json.dumps(rule.get("properties", {})), re.I)))
             message = result.get("message", {})
             candidates.append({"id": candidate_id, "rule_id": str(rule_id), "level": result.get("level", "warning"),
                                "message": message.get("text", message.get("markdown", "")),
                                "path": primary["path"] if primary else "", "line": primary["line"] if primary else 0,
                                "end_line": primary["end_line"] if primary else 0,
                                "related_locations": [l for l in related if l],
+                               "unresolved_related_locations": sum(l is None for l in related),
+                               "cwes": [c.upper() for c in cwes],
+                               "rule_description": rule.get("fullDescription", rule.get("shortDescription", {})).get("text", ""),
                                "location_status": "resolved" if primary else "unresolved",
                                "location_note": "" if primary else "Location is absent, outside the repository, excluded, or has an invalid line range",
                                "suppressed": bool(result.get("suppressions")), "baseline_state": result.get("baselineState", "")})
@@ -78,6 +85,12 @@ def import_scan(memory, scan, index):
     """Group every located result into an explicitly selectable scanner investigation."""
     existing = memory.setdefault("sarif_scans", {})
     if scan["id"] in existing:
+        # Reimport enriches legacy candidates with rule metadata without changing area IDs.
+        candidates = {c["id"]: c for c in scan["candidates"]}
+        for area_id in existing[scan["id"]]["area_ids"]:
+            area = memory["overview"]["areas"][area_id - 1]
+            area["sarif_candidates"] = [candidates[c["id"]] for c in area["sarif_candidates"]]
+        existing[scan["id"]].update(scan)
         memory["active_sarif_scan"] = scan["id"]
         return
     groups = {}
@@ -109,6 +122,8 @@ def scan_summary(memory):
     for candidate in scan["candidates"]:
         assessment = assessments.get(candidate["id"], {"result_id": candidate["id"], "status": "inconclusive",
                                     "reason": candidate["location_note"] or "Investigation pending"})
+        if candidate["id"] in assessments:
+            assessment = current_assessment(assessment)
         rows.append({"rule_id": candidate["rule_id"], "path": candidate["path"], "line": candidate["line"], **assessment})
     return {"scan_id": scan["id"], "total": len(rows), "results": rows,
             "counts": {status: sum(r["status"] == status for r in rows) for status in ("confirmed", "not_confirmed", "inconclusive")}}

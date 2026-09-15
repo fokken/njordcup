@@ -26,6 +26,36 @@ assessment, not proof. Related locations and code-flow source are retrieved with
 context limits. SARIF investigations cover the chunks containing reported locations,
 not every line of each affected file.
 
+## Evidence requirements
+
+Each disposition names the exact scanner rule and candidate ID, states the scanner
+claim, and explains whether source evidence supports or refutes it. Both confirmations
+and dismissals must quote the primary reported location with its original path and
+line number. Quotes must exactly match source actually supplied to the model.
+
+- **Confirmed:** additionally cites supporting source at a verified finding, matches
+  its path/line/CWE, and places it at a location reported by that candidate. When the
+  scanner rule declares CWE metadata, the finding must match one of those CWEs.
+- **Not confirmed:** additionally cites concrete counterevidence and explains why
+  it refutes this particular claim. Missing evidence alone cannot justify dismissal.
+- **Inconclusive:** used for missing context, unresolved flow locations, invalid
+  citations, unrelated findings, rule/CWE mismatches, and unsupported dispositions.
+
+The verifier challenges both findings and candidate assessments before deterministic
+checks run. Saved assessments include citations, the proposed status, validation
+errors and the adjudication-policy version. Rule descriptions and CWE tags are read
+from SARIF rule metadata. Reimporting the same scan enriches older candidates without
+changing their area IDs.
+
+These checks establish evidence provenance and a stronger association to the scanner
+claim. Semantic relevance, exploitability and the explanation of counterevidence
+still depend on model judgment; they are not a formal proof of correctness.
+
+Older decisions without the current evidence policy appear as inconclusive and their
+groups are eligible for `--investigate-all` again. Older attempts remain in history.
+
+## Resuming and supported input
+
 Budget exhaustion preserves completed work. Re-run the same command to continue
 unfinished investigations; completed groups are skipped. Use `--rerun` to start
 again. `--investigate-all` without `--sarif` resumes the active imported scan in

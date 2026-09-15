@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import math
+import time
 
 from .agent import review
 from .provider import OpenAIProvider, ReviewError
@@ -12,6 +14,8 @@ from .memory import area_progress, record_review, review_context, summarize
 from .memory import save_memory
 from .index import build_index, CodeIndex
 from .sarif import load_sarif, import_scan, scan_summary
+from .errors import RunStopped
+from .runtime import RunControl, handle_signals
 
 
 def positive(value):
@@ -22,6 +26,30 @@ def positive(value):
 
 
 def main(argv=None):
+    control = RunControl()
+    with handle_signals(control):
+        return run(argv, control)
+
+
+def nonnegative(value):
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be nonnegative")
+    return number
+
+
+def duration(value):
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive duration")
+    return number
+
+
+def stop_exit(reason):
+    return {"cancelled": 130, "sigterm": 143, "deadline": 124}.get(reason, 2)
+
+
+def run(argv, control):
     parser = argparse.ArgumentParser(prog="njordcup", description="Review code for evidence-backed security issues")
     parser.add_argument("repository", type=Path, nargs="?", default=Path.cwd())
     parser.add_argument("--base", help="Review changed working-tree files relative to this Git commit")
@@ -30,6 +58,11 @@ def main(argv=None):
     parser.add_argument("--api-key-env", default=os.getenv("REVIEW_API_KEY_ENV", "OPENAI_API_KEY"))
     parser.add_argument("--output-mode", choices=["json_schema", "json_object", "prompt"], default=os.getenv("REVIEW_OUTPUT_MODE", "json_schema"))
     parser.add_argument("--max-calls", type=positive, default=20)
+    parser.add_argument("--request-timeout", type=duration, default=120, help="Socket I/O timeout in seconds per attempt")
+    parser.add_argument("--max-retries", type=nonnegative, default=2, help="Transient retries per call; each attempt counts toward --max-calls")
+    parser.add_argument("--retry-base", type=duration, default=1, help="Initial retry backoff in seconds")
+    parser.add_argument("--retry-max-delay", type=duration, default=30, help="Maximum retry delay including Retry-After")
+    parser.add_argument("--max-seconds", type=duration, help="Cooperative time budget for this invocation")
     parser.add_argument("--max-tokens", type=positive, default=6000)
     parser.add_argument("--max-input-chars", type=positive, default=80000, help="Hard request character cap; not a tokenizer-based token limit")
     parser.add_argument("--batch-chars", type=positive, default=24000)
@@ -50,6 +83,8 @@ def main(argv=None):
     parser.add_argument("--flyover-only", action="store_true", help="Save the flyover without prompting or reviewing")
     parser.add_argument("--summary", action="store_true", help="Summarize saved audit progress without model calls")
     args = parser.parse_args(argv)
+    if args.max_seconds:
+        control.deadline = time.monotonic() + args.max_seconds
     root = args.repository.resolve()
     if not root.is_dir():
         parser.error("repository must be a directory")
@@ -89,8 +124,10 @@ def main(argv=None):
                 relative = artifact.resolve().relative_to(root).as_posix()
                 exclusions.extend([relative, relative + "/*"])
         sources, targets, skipped = discover(root, args.base, exclusions, args.max_file_bytes)
+        control.check()
         previous_index = json.loads(index_path.read_text()) if index_path.is_file() else None
         repository_index = build_index(sources, targets, previous_index, chunk_chars=max(32, args.batch_chars // 2 - 200))
+        control.check()
         if not args.dry_run:
             save_memory(index_path, repository_index)
         if args.index_only:
@@ -106,7 +143,10 @@ def main(argv=None):
                       "source_characters": sum(len(sources[p]) for p in targets)}
         else:
             provider = OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
-                                      args.api_key_env, args.output_mode, args.max_tokens, args.max_input_chars)
+                                      args.api_key_env, args.output_mode, args.max_tokens, args.max_input_chars,
+                                      request_timeout=args.request_timeout, max_retries=args.max_retries,
+                                      retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
+                                      on_retry=lambda event: print(f"{event['reason']}; retry {event['retry']} in {event['delay_seconds']:.1f}s", file=sys.stderr))
             if not targets and not args.sarif and not args.investigate_all:
                 report = {"status": "no_targets", "skipped": skipped, "findings": []}
             else:
@@ -137,6 +177,7 @@ def main(argv=None):
                 session_reviews = []
                 code_lookup = None
                 while True:
+                    control.check()
                     if args.investigate_all:
                         selected = next(queued, None)
                     if selected is None and interactive and areas:
@@ -145,9 +186,13 @@ def main(argv=None):
                             print(f"{progress['id']}. [{progress['status']}, {progress['findings']} findings] {area['title']}: {area['reason']}", file=sys.stderr)
                         print("Choose an area to review (completed areas can be rerun), or Enter to stop: ", end="", file=sys.stderr, flush=True)
                         try:
+                            control.prompting = True
                             choice = input().strip()
                         except EOFError:
                             choice = ""
+                        finally:
+                            control.prompting = False
+                        control.check()
                         if choice:
                             if not choice.isdigit():
                                 print("Expected an area number.", file=sys.stderr)
@@ -163,7 +208,7 @@ def main(argv=None):
                         raise ReviewError("Area number out of range; no review started")
                     area = areas[selected - 1]
                     scoped = area["paths"] if area.get("sarif_candidates") else [p for p in targets if p in area["paths"]]
-                    before = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens")}
+                    before = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
                     prior = next((a["report"] for a in reversed(memory.get("reviews", [])) if a["area_id"] == selected), None)
                     if args.rerun or (prior and prior["status"] == "complete"):
                         prior = None
@@ -182,6 +227,8 @@ def main(argv=None):
                     report["usage"] = {k: getattr(provider, k, 0) - value for k, value in before.items()}
                     attempt = record_review(memory_path, memory, selected, report, attempt_id)
                     session_reviews.append(attempt["report"])
+                    if report.get("stop_reason"):
+                        break
                     if not interactive and not args.investigate_all:
                         break
                     print(f"Saved area {selected}: {report['status']}, {len(report.get('findings', []))} findings.", file=sys.stderr)
@@ -201,6 +248,9 @@ def main(argv=None):
                               "reviews": session_reviews,
                               "findings": list({f["id"]: f for r in session_reviews for f in r.get("findings", [])}.values())}
                 report["area_progress"] = area_progress(memory)
+                stopped = next((r["stop_reason"] for r in session_reviews if r.get("stop_reason")), None)
+                if stopped:
+                    report["stop_reason"] = stopped
                 report["sarif"] = scan_summary(memory)
                 if args.investigate_all and report["sarif"]["counts"]["inconclusive"]:
                     report["status"] = "incomplete"
@@ -209,15 +259,29 @@ def main(argv=None):
                 report["max_request_chars"] = getattr(provider, "max_request_chars", 0)
                 report["memory_path"] = str(memory_path)
                 report["memory_reused"] = reused
-                report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens")}
+                report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
         rendered = json.dumps(report, indent=2, ensure_ascii=True) + "\n"
         if args.output:
             args.output.write_text(rendered)
         else:
             sys.stdout.write(rendered)
+        if report.get("stop_reason"):
+            return stop_exit(report["stop_reason"])
         if report["status"] == "incomplete":
             return 2
         return 1 if report.get("findings") else 0
+    except RunStopped as exc:
+        report = {"status": "incomplete", "stop_reason": exc.reason, "errors": [str(exc)],
+                  "memory_path": str(memory_path) if "memory_path" in locals() else None}
+        if "memory" in locals():
+            report["sarif"] = scan_summary(memory)
+            report["area_progress"] = area_progress(memory)
+        rendered = json.dumps(report, indent=2) + "\n"
+        if args.output:
+            args.output.write_text(rendered)
+        else:
+            sys.stdout.write(rendered)
+        return stop_exit(exc.reason)
     except (OSError, ValueError, ReviewError, EOFError) as exc:
         print(f"njordcup: {exc}", file=sys.stderr)
         return 2

@@ -9,7 +9,7 @@ from unittest.mock import patch
 from njordcup.agent import review
 from njordcup.cli import main
 from njordcup.sarif import load_sarif
-from test_scale import AutomaticProvider
+from test_scale import AutomaticProvider, make_assessment
 from test_review import FINDING
 
 
@@ -22,6 +22,41 @@ def document(results):
 
 
 class SarifTests(unittest.TestCase):
+    def test_rule_metadata_and_unresolved_flow_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "r.sarif"
+            data = document([{"ruleId": "eval", "locations": [location()], "relatedLocations": [location("missing.py")]}])
+            data["runs"][0]["tool"]["driver"]["rules"] = [{"id": "eval", "properties": {"tags": ["CWE-95: Eval Injection"]},
+                                                            "shortDescription": {"text": "User-controlled evaluation"}}]
+            path.write_text(json.dumps(data))
+            candidate = load_sarif(path, root, {"app.py": "eval(user_input)"})["candidates"][0]
+            self.assertEqual(candidate["cwes"], ["CWE-95"])
+            self.assertEqual(candidate["rule_description"], "User-controlled evaluation")
+            self.assertEqual(candidate["unresolved_related_locations"], 1)
+
+    def test_legacy_completed_group_is_reinvestigated_by_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.py").write_text("safe()\n")
+            sarif = root / "r.sarif"
+            sarif.write_text(json.dumps(document([{"ruleId": "test", "locations": [location()]}])))
+            args = [tmp, "--model", "test", "--sarif", str(sarif)]
+            with patch("njordcup.cli.OpenAIProvider", return_value=AutomaticProvider()), patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(main([*args, "--flyover-only"]), 0)
+            path = root / ".njordcup" / "memory.json"
+            memory = json.loads(path.read_text())
+            scan = memory["sarif_scans"][memory["active_sarif_scan"]]
+            memory["reviews"] = [{"id": "legacy", "area_id": scan["area_ids"][0], "saved_at": "old",
+                                   "report": {"status": "complete", "findings": [], "sarif_assessments": [
+                                       {"result_id": scan["candidates"][0]["id"], "status": "confirmed"}]}}]
+            path.write_text(json.dumps(memory))
+            provider = AutomaticProvider()
+            with patch("njordcup.cli.OpenAIProvider", return_value=provider), patch("sys.stdout", new_callable=io.StringIO) as out, patch("sys.stderr", new_callable=io.StringIO):
+                self.assertEqual(main([*args, "--investigate-all"]), 0)
+                self.assertEqual(json.loads(out.getvalue())["sarif"]["counts"]["not_confirmed"], 1)
+            self.assertEqual(provider.calls, 2)
+
     def test_all_unresolved_findings_are_reported_even_with_no_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "r.sarif"
@@ -67,8 +102,7 @@ class SarifTests(unittest.TestCase):
         seed = {"id": "one", "path": "app.py", "line": 1, "related_locations": []}
         class ConfirmProvider(AutomaticProvider):
             def ask(self, instructions, payload, schema):
-                return {"findings": [FINDING], "context_paths": [], "assessments": [
-                    {"result_id": "one", "status": "confirmed", "reason": "Input evaluated", "finding_path": "app.py", "finding_line": 1}]}
+                return {"findings": [FINDING], "context_paths": [], "assessments": [make_assessment(seed, "eval(user_input)", "confirmed", "CWE-95")]}
         result = review({"app.py": "safe()"}, ["app.py"], [], ConfirmProvider(), seeds=[seed])
         self.assertEqual(result["sarif_assessments"][0]["status"], "inconclusive")
         valid = review({"app.py": "eval(user_input)"}, ["app.py"], [], ConfirmProvider(), seeds=[seed])

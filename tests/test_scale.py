@@ -12,6 +12,20 @@ from njordcup.provider import ReviewError
 from njordcup.repository import discover
 
 
+def make_assessment(seed, quote, status="not_confirmed", cwe=""):
+    citation = {"path": seed["path"], "line": seed["line"], "quote": quote,
+                "role": "reported_location", "explanation": "This is the scanner's reported operation"}
+    return {"result_id": seed["id"], "rule_id": seed.get("rule_id", "unknown"),
+            "scanner_claim": seed.get("message") or "The operation is unsafe", "status": status,
+            "claim_relation": "supports" if status == "confirmed" else "refutes",
+            "reason": "Mock claim-specific assessment", "missing_context": [],
+            "finding_path": seed["path"] if status == "confirmed" else "",
+            "finding_line": seed["line"] if status == "confirmed" else 0,
+            "finding_cwe": cwe if status == "confirmed" else "",
+            "evidence": [citation, {**citation, "role": "support" if status == "confirmed" else "counterevidence",
+                                      "explanation": "This operation establishes the assessment in this fixture"}]}
+
+
 class AutomaticProvider:
     model = "test"
     base_url = "http://localhost:8000/v1"
@@ -32,8 +46,11 @@ class AutomaticProvider:
                                "attack_surfaces": ["inputs"], "paths": payload["target_paths"]}], "unknowns": []}
         result = {"findings": [], "context_paths": []}
         if "assessments" in schema["properties"]:
-            result["assessments"] = [{"result_id": s["id"], "status": "not_confirmed", "reason": "Mock counterevidence",
-                                      "finding_path": "", "finding_line": 0} for s in payload["sarif_candidates"]]
+            result["assessments"] = []
+            for seed in payload["sarif_candidates"]:
+                file = next(f for f in payload["files"] if f["path"] == seed["path"] and f["start"] <= seed["line"] <= f["end"])
+                quote = file["lines"].splitlines()[seed["line"] - file["start"]].split(": ", 1)[1]
+                result["assessments"].append(make_assessment(seed, quote))
         return result
 
 
