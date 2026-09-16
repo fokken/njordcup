@@ -19,6 +19,14 @@ search, text-only indexing, source filters, and SARIF locations in additional la
 Budget tests cover output reservation, Unicode, batch splitting/resumption, flyover
 coverage updates and explicit incomplete reviews when source context cannot fit.
 Retrieval tests cover identifier fragments, paths, quoted phrases and unread matches.
+Automatic-mode tests cover uninterrupted selection, budget resumption, and notifications
+after persistence. HTML tests cover offline generation, escaped hostile content,
+and protection of memory/index files.
+Implementation-analysis tests cover separate output, partial resumption, stale/scope
+rejection, and security reuse that saves mapping calls while still reviewing source.
+Regression tests cover Git subdirectory scope, index protection during summaries,
+completed SARIF scan exit codes, malformed input, flyover resumption/coverage, and
+retrieval bookkeeping after context trimming.
 [evals/cases.json](../evals/cases.json) contains ten vulnerable/fixed smoke fixtures
 across Python, JavaScript, Go and Ruby, covering SQL injection, shell injection and
 object authorization. JavaScript and Ruby cases require cross-file reasoning.

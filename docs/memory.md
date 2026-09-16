@@ -37,6 +37,23 @@ Memory contains sensitive code excerpts and findings. Use a private directory an
 one writer per memory file; concurrent writers are not supported. Archives are
 retained indefinitely, so storage requirements grow with audit history.
 
+## Saved coverage
+
+Every focused-review checkpoint saves chunk and line totals, completed counts,
+symbol counts where available, heuristic attack-surface counts, and reviewed/pending
+file lists. Completed chunk records include their source ranges and hashes. Later
+attempts can resume those chunks when source, dependencies and review settings match.
+The summary's `area_coverage` uses the latest attempt for each area; older coverage
+remains in attempt history. Counts from overlapping areas must not be summed into
+a repository-wide percentage.
+
+Flyover coverage is separate: it describes eligible/indexed files, sampled files
+or completed/pending component pages. SARIF coverage counts chunks containing primary
+reported start locations; related files are evidence context, not additional reviewed
+targets. Symbol and heuristic-surface totals describe the selected files and may
+include portions outside those SARIF chunks. In text mode there are no parsed symbols.
+Coverage records processing progress, not a guarantee that reviewed code is secure.
+
 ## Audit summaries
 
 ```sh

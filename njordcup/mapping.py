@@ -8,7 +8,7 @@ from .provider import ReviewError
 from .errors import RunStopped
 
 
-def hierarchical_flyover(sources, targets, provider, path, index, refresh=False, analyze=True):
+def hierarchical_flyover(sources, targets, provider, path, index, refresh=False, analyze=True, implementation=None):
     from .flyover import OVERVIEW, PROMPT, fingerprint, make_payload, provider_identity, validate_overview
     old = json.loads(path.read_text()) if path.is_file() else {}
     mode_matches = old.get("index_mode", "auto") == index.get("index_mode", "auto")
@@ -69,6 +69,13 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
             key = component + ":" + str(offset // 30)
             hashes = {p: index["files"][p]["hash"] for p in page_paths}
             previous = old_pages.get(key, {})
+            described = (implementation or {}).get("pages", {}).get(key, {}) if not refresh else {}
+            if described.get("status") == "complete" and described.get("hashes") == hashes:
+                from .implementation import page_overview
+                memory["component_pages"][key] = {"component": component, "paths": page_paths, "hashes": hashes,
+                                                 "status": "complete", "overview": page_overview(described["analysis"]),
+                                                 "coverage": described["coverage"], "source": "implementation_analysis"}
+                continue
             if previous.get("hashes") == hashes and previous.get("status") == "complete" and not affected.intersection(page_paths):
                 memory["component_pages"][key] = previous
             else:
@@ -88,7 +95,8 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
             suggested = [a for p in analyzed for a in p["overview"]["areas"]]
             area["features"] = sorted({s for a in suggested for s in a["features"]})[:20]
             area["attack_surfaces"] = sorted({s for a in suggested for s in a["attack_surfaces"]})[:20]
-        memory["coverage"] = {**index["stats"], "target_files": len(targets), "mapped_target_files": sum(len(a["paths"]) for a in areas),
+        memory["coverage"] = {**index["stats"], "target_files": len(targets),
+                              "mapped_target_files": len({p for a in areas if "component" in a for p in a["paths"]}),
                               "pages_total": len(memory["component_pages"]), "pages_complete": len(summaries),
                               "pages_pending": sum(p["status"] != "complete" for p in memory["component_pages"].values())}
         memory["overview"]["unknowns"] = ["Component summaries sample source; local indexing covers all eligible lines. Lexical call/import edges are incomplete, especially for dynamic dispatch."]

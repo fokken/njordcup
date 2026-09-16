@@ -47,7 +47,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     report["batch_splits"] = 0
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 5,
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 6,
                                            "budgets": {k: getattr(provider, k, None) for k in
                                                        ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()
     report["review_signature"] = signature
@@ -153,6 +153,16 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
         loaded = {c["id"] for c in batch}
         dependencies = {p: index["files"][p]["hash"] for p in paths}
         limits, remaining = [], context_chars
+        def ask(instructions):
+            nonlocal loaded, remaining
+            result = provider.ask(instructions, payload, schema)
+            # Budget fitting can remove context. Retrieval must reflect the actual
+            # request, and removed chunks must not continue consuming the allowance.
+            loaded = {entry["id"] for entry in payload["files"]}
+            remaining = max(0, context_chars - sum(len(json.dumps(entry)) for entry in payload["files"]
+                                                  if entry["id"] not in payload["target_chunks"]))
+            validate(result, schema)
+            return result
         for seed in batch_seeds:
             if seed.get("unresolved_related_locations", 0):
                 limits.append("Some scanner flow/related locations could not be resolved")
@@ -178,8 +188,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
         try:
             if getattr(provider, "control", None):
                 provider.control.check()
-            result = provider.ask(instructions, payload, schema)
-            validate(result, schema)
+            result = ask(instructions)
             for round_number in range(context_rounds):
                 requests = list(dict.fromkeys(result["context_paths"]))
                 if not requests:
@@ -217,8 +226,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 payload["retrieval_round"] = round_number + 1
                 payload["rounds_remaining"] = context_rounds - round_number - 1
                 payload["previous_candidates"] = result["findings"]
-                result = provider.ask(instructions, payload, schema)
-                validate(result, schema)
+                result = ask(instructions)
             if result["context_paths"]:
                 limits.append("Context retrieval round limit reached")
             if result["findings"] or batch_seeds:
@@ -226,8 +234,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 payload["stage"], payload["candidates"] = "verify", result["findings"]
                 if batch_seeds:
                     payload["candidate_assessments"] = result["assessments"]
-                result = provider.ask(instructions + "\nChallenge candidates and assessments using the supplied source. Check reachability, sanitization, authorization and preconditions. Remove unsupported findings. No new findings or context requests.", payload, schema)
-                validate(result, schema)
+                result = ask(instructions + "\nChallenge candidates and assessments using the supplied source. Check reachability, sanitization, authorization and preconditions. Remove unsupported findings. No new findings or context requests.")
                 if result["context_paths"]:
                     limits.append("Verifier requested additional context")
                 if any((f["path"], f["line"], f["cwe"]) not in candidate_locations for f in result["findings"]):

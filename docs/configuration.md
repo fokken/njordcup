@@ -46,6 +46,8 @@ Before a request, optional catalogs, architectural memory and previous candidate
 hints can be removed. Flyovers reduce samples and record coverage changes. Focused
 reviews can omit reference chunks only with a saved limitation that keeps the review
 incomplete; evidence validation uses only source retained in the final request.
+Removed reference chunks release their context allowance and may be requested again
+in later rounds; the saved omission limitation remains visible for that attempt.
 If mandatory input still cannot fit, batches split. A single unfit chunk remains
 unreviewed with an error; lower `--batch-chars` to rebuild smaller chunks or raise
 the input budget. Candidates, scanner claims and target code are never trimmed.

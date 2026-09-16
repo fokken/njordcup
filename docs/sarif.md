@@ -60,6 +60,9 @@ Budget exhaustion preserves completed work. Re-run the same command to continue
 unfinished investigations; completed groups are skipped. Use `--rerun` to start
 again. `--investigate-all` without `--sarif` resumes the active imported scan in
 saved memory. Changed source requires a refreshed map/reimport first.
+All-results output includes saved findings from completed groups, including when
+no new model calls are needed. A completed scan with findings returns exit code `1`;
+pending/incomplete groups or inconclusive results return `2`.
 
 Supported input: SARIF 2.1.0 inline results, artifact indexes, URI bases, related
 locations and code-flow locations. Paths must resolve inside the eligible local
@@ -67,6 +70,7 @@ checkout. Missing, excluded, out-of-tree or invalid locations remain explicitly
 inconclusive in the summary; they are never silently dropped. Absolute paths from
 another CI machine may need rebasing in the SARIF before import. The tool does not
 run Semgrep or execute scanner-supplied commands.
+Malformed input produces an error; njordcup does not treat it as an empty scan.
 
 ## Format reference
 

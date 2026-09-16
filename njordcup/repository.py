@@ -34,7 +34,7 @@ def discover(root: Path, base=None, excludes=(), max_bytes=2000000, includes=())
     selected = None
     if base:
         revision = git(root, "rev-parse", "--verify", "--end-of-options", base + "^{commit}").strip()
-        selected = set(git(root, "diff", "--name-only", "-z", "--diff-filter=ACMRT", revision, "--").split("\0"))
+        selected = set(git(root, "diff", "--relative", "--name-only", "-z", "--diff-filter=ACMRT", revision, "--").split("\0"))
         selected.update(git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0"))
     sources = {}
     for name in sorted(set(names) - {""}):

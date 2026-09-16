@@ -24,7 +24,9 @@ def shrink_payload(payload):
             samples.pop()
         elif len(payload.get("inventory", [])) > 1:
             keep = {sample["path"] for sample in samples}
-            removable = [p for p in payload["inventory"] if p not in keep]
+            targets = set(payload["target_paths"])
+            removable = [p for p in payload["inventory"] if p not in keep and
+                         (p not in targets or len(targets) > 1)]
             if not removable:
                 return False
             payload["inventory"].remove(removable[-1])

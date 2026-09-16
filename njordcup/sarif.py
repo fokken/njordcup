@@ -11,12 +11,21 @@ from .adjudication import current_assessment
 
 def load_sarif(path, root, sources):
     raw = path.read_bytes()
+    try:
+        return parse_sarif(raw, path, root, sources)
+    except (AttributeError, TypeError, KeyError, ValueError, RecursionError) as exc:
+        raise ReviewError("Malformed SARIF input; expected correctly typed SARIF 2.1.0 inline results") from exc
+
+
+def parse_sarif(raw, path, root, sources):
     document = json.loads(raw)
     if document.get("version") != "2.1.0" or not isinstance(document.get("runs"), list):
         raise ReviewError("Expected SARIF 2.1.0 with a runs array")
     scan_id = hashlib.sha256(raw).hexdigest()
     candidates = []
     for run_number, run in enumerate(document["runs"]):
+        if not isinstance(run, dict) or not isinstance(run.get("results", []), list):
+            raise ReviewError("SARIF runs must be objects with inline results arrays")
         if run.get("externalPropertyFileReferences", {}).get("results"):
             raise ReviewError("External SARIF result files are unsupported; import a SARIF with inline results")
         artifacts = run.get("artifacts", [])
@@ -67,14 +76,18 @@ def load_sarif(path, root, sources):
             rule = next((r for r in rules if r.get("id") == rule_id), {})
             cwes = sorted(set(re.findall(r"CWE-\d+", json.dumps(rule.get("properties", {})), re.I)))
             message = result.get("message", {})
+            text = message.get("text", message.get("markdown", ""))
+            description = rule.get("fullDescription", rule.get("shortDescription", {})).get("text", "")
+            if not isinstance(text, str) or not isinstance(description, str):
+                raise ReviewError("SARIF messages and rule descriptions must be strings")
             candidates.append({"id": candidate_id, "rule_id": str(rule_id), "level": result.get("level", "warning"),
-                               "message": message.get("text", message.get("markdown", "")),
+                               "message": text,
                                "path": primary["path"] if primary else "", "line": primary["line"] if primary else 0,
                                "end_line": primary["end_line"] if primary else 0,
                                "related_locations": [l for l in related if l],
                                "unresolved_related_locations": sum(l is None for l in related),
                                "cwes": [c.upper() for c in cwes],
-                               "rule_description": rule.get("fullDescription", rule.get("shortDescription", {})).get("text", ""),
+                               "rule_description": description,
                                "location_status": "resolved" if primary else "unresolved",
                                "location_note": "" if primary else "Location is absent, outside the repository, excluded, or has an invalid line range",
                                "suppressed": bool(result.get("suppressions")), "baseline_state": result.get("baselineState", "")})

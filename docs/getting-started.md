@@ -27,7 +27,7 @@ python3 -m njordcup /path/to/repo --summary
 ```
 
 Interactive reviews save after every completed batch and return to the area menu.
-Non-interactive runs stop after the flyover unless `--area` or `--investigate-all`
+Non-interactive runs stop after the flyover unless `--area`, `--automatic`, or `--investigate-all`
 explicitly authorizes investigation. `--dry-run` previews eligible paths without
 model calls or writing the index.
 
@@ -42,6 +42,8 @@ files are outside the changed-file selection.
 
 Exit codes: `0` completed without findings, saved flyover/import, index/dry run or
 successful summary; `1` completed with findings; `2` incomplete investigation/error.
+Failed architectural page analysis also returns `2`, with saved progress and errors;
+rerun `--flyover-only` to finish pending pages.
 Cancellation uses `130` for Ctrl+C and `143` for SIGTERM; an exhausted `--max-seconds`
 budget uses `124`. These stops retain completed checkpoints and report `stop_reason`.
 For `--investigate-all`, any inconclusive result returns `2`. Read the JSON status:
@@ -52,3 +54,36 @@ a successful summary command does not mean the audit itself is complete.
 - [Configuration](configuration.md)
 - [Memory and audit summaries](memory.md)
 - [Semgrep SARIF investigations](sarif.md)
+
+## Automatic auditing
+
+```sh
+python3 -m njordcup /path/to/repo --automatic \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --max-calls 200 --max-seconds 7200
+```
+
+`--automatic` (alias `--auto`) maps every eligible target into a component area,
+then reviews those areas without prompting. This includes small repositories where
+an ordinary flyover might suggest only a subset of files. Existing include/exclude
+filters and `--base` still define the target scope. Switching from a small suggested-area
+map to a component map archives the old snapshot and starts the component reviews.
+
+Each verified batch is saved. Newly encountered findings are announced immediately
+after that checkpoint as `Potential issue saved:` messages on stderr; stdout remains
+the final JSON result. Findings pass the existing model verification and exact-source
+checks first. Duplicate path/line/CWE notifications are suppressed within an invocation.
+A finding from a resumed partial attempt may be announced again.
+
+The queue visits each unfinished source component once per invocation. It does not
+loop indefinitely over inconclusive areas. Call budgets, retries, cancellation, and
+time limits still apply, including calls spent on architectural mapping. Rerun the
+same command to resume; completed areas are skipped unless `--rerun` is supplied.
+Final output includes saved findings from all source components. Exit codes remain
+`1` for completed audits with findings and `2` for incomplete work, with the usual
+cancellation/time-limit codes.
+
+This mode performs broad source reviews; scanner adjudication is a separate action
+using `--sarif ... --investigate-all`. Saved scanner investigations remain available
+in summaries and [HTML reports](reporting.md). Automatic mode does not execute code
+or prove that it found every security issue.

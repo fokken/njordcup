@@ -31,11 +31,18 @@ To investigate every Semgrep finding, add `--sarif results.sarif --investigate-a
 to the review command. To build only the local index, run
 `python3 -m njordcup /path/to/repo --index-only`.
 
+Use `--automatic` to audit all source components without prompts. Generate an offline
+HTML security report with `python3 -m njordcup /path/to/repo --report`.
+Use `--implementation-analysis` to describe the code and `--implementation-report`
+to generate its separate HTML report.
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md): workflows, review scope, and exit codes.
 - [Configuration](docs/configuration.md): providers, credentials, budgets, and caching.
 - [Semgrep SARIF](docs/sarif.md): importing findings, investigating all results, and resuming.
+- [Implementation analysis](docs/implementation-analysis.md): saved implementation descriptions and security reuse.
+- [HTML reports](docs/reporting.md): formatted findings, evidence, and coverage.
 - [Memory and summaries](docs/memory.md): checkpoints, history, and invalidation.
 - [Architecture and coverage](docs/architecture.md): indexing, retrieval, and limitations.
 - [Resource planning](docs/resource-planning.md): context windows, hardware, and scale benchmarks.

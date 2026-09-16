@@ -85,23 +85,20 @@ def read_memory(path, sources, targets, provider, index_mode=None):
     return memory
 
 
-def flyover(sources, targets, provider, memory_path, refresh=False, repository_index=None):
+def flyover(sources, targets, provider, memory_path, refresh=False, repository_index=None, implementation=None):
     index_mode = repository_index.get("index_mode", "auto") if repository_index else "auto"
+    saved = None
     if not refresh and memory_path.is_file():
         try:
             saved = read_memory(memory_path, sources, targets, provider, index_mode=index_mode)
-            if not saved.get("coverage", {}).get("pages_pending"):
-                return saved, True
         except (ValueError, KeyError, TypeError, ReviewError):
             pass
-    if repository_index and (len(repository_index["components"]) > 1 or repository_index["stats"]["lines"] > 2000 or len(sources) > 40):
+    if saved and not saved.get("coverage", {}).get("pages_pending"):
+        return saved, True
+    if repository_index and (implementation or (saved and saved.get("version") == 2) or len(repository_index["components"]) > 1
+                             or repository_index["stats"]["lines"] > 2000 or len(sources) > 40):
         from .mapping import hierarchical_flyover
-        return hierarchical_flyover(sources, targets, provider, memory_path, repository_index, refresh)
-    if not refresh and memory_path.is_file():
-        try:
-            return read_memory(memory_path, sources, targets, provider, index_mode=index_mode), True
-        except (ValueError, KeyError, TypeError, ReviewError):
-            pass
+        return hierarchical_flyover(sources, targets, provider, memory_path, repository_index, refresh, implementation=implementation)
     payload = make_payload(sources, targets)
     overview = provider.ask(PROMPT, payload, OVERVIEW)
     validate_overview(overview, sources, targets)
