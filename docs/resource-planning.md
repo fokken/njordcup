@@ -8,13 +8,16 @@ default settings, or start with **32k** and reduced budgets, for example:
 ```sh
 python3 -m njordcup /path/to/repo --model YOUR_MODEL \
   --base-url http://localhost:11434/v1 --api-key-env OLLAMA_API_KEY \
-  --batch-chars 12000 --context-chars 12000 --max-tokens 4000 --max-input-chars 48000
+  --context-window 32768 --batch-chars 12000 --context-chars 12000 --max-tokens 4000 --max-input-chars 48000
 ```
 
 These are planning estimates, not certified minimums. Assuming 2–4 characters per
 token, a 48,000-character request is roughly 12k–24k input tokens, plus up to 4k
 output tokens and server formatting overhead. Some languages/content tokenize
 less efficiently. A 16k window requires further tuning and sacrifices useful context.
+The adaptive planner defaults to a more conservative one serialized byte per token,
+so it may split batches or omit context before reaching those character caps. Set
+the actual server window explicitly; see [budget configuration](configuration.md).
 
 Budget roughly **4 GB RAM and two CPU cores for the njordcup controller** as an
 initial deployment allowance, excluding inference and growing audit archives.
@@ -28,11 +31,13 @@ Synthetic Linux indexing measurements in this development environment:
 | --- | --- | --- | --- | --- |
 | 50,000 | 50 / 10 | 0.66 s | 28.9 MiB | 0.82 MB |
 | 150,000 | 150 / 30 | 2.02 s | 52.4 MiB | 2.46 MB |
-| 250,000 | 250 / 50 | 3.41 s | 77.8 MiB | 4.11 MB |
+| 250,000 | 250 / 50 | 3.44 s | 97.3 MiB | 4.11 MB |
 
 These measure generated Python indexing/retrieval metadata, not a full live audit,
 server memory, detection quality or guaranteed performance on arbitrary repositories.
 Reproduce with `python3 benchmarks/scale.py --lines 250000`.
+The 250k row was rerun with fragment/literal retrieval enabled; constructing its
+retrieval index took another 0.65 seconds. The smaller rows are earlier measurements.
 
 ## Related guides
 

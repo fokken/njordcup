@@ -92,6 +92,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
                               "pages_total": len(memory["component_pages"]), "pages_complete": len(summaries),
                               "pages_pending": sum(p["status"] != "complete" for p in memory["component_pages"].values())}
         memory["overview"]["unknowns"] = ["Component summaries sample source; local indexing covers all eligible lines. Lexical call/import edges are incomplete, especially for dynamic dispatch."]
+        memory["overview"]["unknowns"].extend(sorted({u for overview in summaries for u in overview["unknowns"]}))
         if memory["coverage"]["pages_pending"]:
             memory["overview"]["unknowns"].append("Some architectural pages await analysis; rerun --flyover-only to continue.")
         save_memory(path, memory)
@@ -112,6 +113,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
         try:
             overview = provider.ask(PROMPT + "\nThis is one page of a larger component. Summarize this page only.", payload, OVERVIEW)
             validate_overview(overview, page_sources, page["paths"])
+            overview["unknowns"].extend(payload.get("budget_notes", []))
             sampled = {s["path"] for s in payload["samples"]}
             if any(d["evidence_path"] not in sampled for d in overview["dependencies"]):
                 raise ReviewError("Flyover cited dependency evidence outside sampled files")

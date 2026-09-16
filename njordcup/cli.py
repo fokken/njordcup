@@ -64,6 +64,9 @@ def run(argv, control):
     parser.add_argument("--retry-max-delay", type=duration, default=30, help="Maximum retry delay including Retry-After")
     parser.add_argument("--max-seconds", type=duration, help="Cooperative time budget for this invocation")
     parser.add_argument("--max-tokens", type=positive, default=6000)
+    parser.add_argument("--context-window", type=positive, help="Configured server context tokens, including output")
+    parser.add_argument("--bytes-per-token", type=duration, default=1, help="Input token estimate divisor (default: conservative 1 byte/token)")
+    parser.add_argument("--token-margin", type=nonnegative, default=1024, help="Reserved tokens for server formatting overhead")
     parser.add_argument("--max-input-chars", type=positive, default=80000, help="Hard request character cap; not a tokenizer-based token limit")
     parser.add_argument("--batch-chars", type=positive, default=24000)
     parser.add_argument("--context-chars", type=positive, default=24000)
@@ -147,6 +150,7 @@ def run(argv, control):
             provider = OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
                                       args.api_key_env, args.output_mode, args.max_tokens, args.max_input_chars,
                                       request_timeout=args.request_timeout, max_retries=args.max_retries,
+                                      context_window=args.context_window, bytes_per_token=args.bytes_per_token, token_margin=args.token_margin,
                                       retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
                                       on_retry=lambda event: print(f"{event['reason']}; retry {event['retry']} in {event['delay_seconds']:.1f}s", file=sys.stderr))
             if not targets and not args.sarif and not args.investigate_all:

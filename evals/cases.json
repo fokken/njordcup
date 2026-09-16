@@ -1,22 +1,106 @@
 [
   {
     "id": "sql_injection",
-    "expected_cwes": ["CWE-89"],
-    "source": "from flask import Flask, request\nimport sqlite3\napp = Flask(__name__)\n@app.get('/users')\ndef users():\n    name = request.args.get('name', '')\n    db = sqlite3.connect('users.db')\n    return str(db.execute(\"SELECT name FROM users WHERE name = '\" + name + \"'\").fetchall())\n"
+    "expected_cwes": [
+      "CWE-89"
+    ],
+    "source": "from flask import Flask, request\nimport sqlite3\napp = Flask(__name__)\n@app.get('/users')\ndef users():\n    name = request.args.get('name', '')\n    db = sqlite3.connect('users.db')\n    return str(db.execute(\"SELECT name FROM users WHERE name = '\" + name + \"'\").fetchall())\n",
+    "language": "python"
   },
   {
     "id": "sql_parameterized",
     "expected_cwes": [],
-    "source": "from flask import Flask, request\nimport sqlite3\napp = Flask(__name__)\n@app.get('/users')\ndef users():\n    name = request.args.get('name', '')\n    db = sqlite3.connect('users.db')\n    return str(db.execute('SELECT name FROM users WHERE name = ?', (name,)).fetchall())\n"
+    "source": "from flask import Flask, request\nimport sqlite3\napp = Flask(__name__)\n@app.get('/users')\ndef users():\n    name = request.args.get('name', '')\n    db = sqlite3.connect('users.db')\n    return str(db.execute('SELECT name FROM users WHERE name = ?', (name,)).fetchall())\n",
+    "language": "python"
   },
   {
     "id": "shell_injection",
-    "expected_cwes": ["CWE-78"],
-    "source": "from flask import Flask, request\nimport subprocess\napp = Flask(__name__)\n@app.get('/lookup')\ndef lookup():\n    host = request.args.get('host', 'localhost')\n    return subprocess.check_output('nslookup ' + host, shell=True, text=True)\n"
+    "expected_cwes": [
+      "CWE-78"
+    ],
+    "source": "from flask import Flask, request\nimport subprocess\napp = Flask(__name__)\n@app.get('/lookup')\ndef lookup():\n    host = request.args.get('host', 'localhost')\n    return subprocess.check_output('nslookup ' + host, shell=True, text=True)\n",
+    "language": "python"
   },
   {
     "id": "shell_fixed_allowlist",
     "expected_cwes": [],
-    "source": "from flask import Flask, request, abort\nimport subprocess\napp = Flask(__name__)\n@app.get('/lookup')\ndef lookup():\n    host = request.args.get('host', 'localhost')\n    if host not in {'localhost', 'example.com'}:\n        abort(400)\n    return subprocess.check_output(['nslookup', host], shell=False, text=True)\n"
+    "source": "from flask import Flask, request, abort\nimport subprocess\napp = Flask(__name__)\n@app.get('/lookup')\ndef lookup():\n    host = request.args.get('host', 'localhost')\n    if host not in {'localhost', 'example.com'}:\n        abort(400)\n    return subprocess.check_output(['nslookup', host], shell=False, text=True)\n",
+    "language": "python"
+  },
+  {
+    "id": "javascript_cross_file_sql_vulnerable",
+    "language": "javascript",
+    "expected_cwes": [
+      "CWE-89"
+    ],
+    "targets": [
+      "db.js"
+    ],
+    "sources": {
+      "routes.js": "import express from 'express';\nimport {findUser} from './db.js';\nconst app = express();\napp.get('/users', async (req, res) => res.json(await findUser(req.query.name)));\napp.listen(3000);\n",
+      "db.js": "import pg from 'pg';\nconst pool = new pg.Pool();\nexport async function findUser(name) {\n  return (await pool.query(\"SELECT name FROM users WHERE name = '\" + name + \"'\")).rows;\n}\n"
+    }
+  },
+  {
+    "id": "go_shell_vulnerable",
+    "language": "go",
+    "expected_cwes": [
+      "CWE-78"
+    ],
+    "sources": {
+      "main.go": "package main\nimport (\"net/http\"; \"os/exec\")\nfunc main() {\n http.HandleFunc(\"/lookup\", func(w http.ResponseWriter, r *http.Request) {\n  host := r.URL.Query().Get(\"host\")\n  out, _ := exec.Command(\"sh\", \"-c\", \"nslookup \" + host).Output()\n  w.Write(out)\n })\n http.ListenAndServe(\":8080\", nil)\n}\n"
+    }
+  },
+  {
+    "id": "ruby_cross_file_authorization_vulnerable",
+    "language": "ruby",
+    "expected_cwes": [
+      "CWE-639"
+    ],
+    "targets": [
+      "app/controllers/invoices_controller.rb"
+    ],
+    "sources": {
+      "config/routes.rb": "Rails.application.routes.draw do\n  resources :invoices, only: [:show]\nend\n",
+      "app/controllers/application_controller.rb": "class ApplicationController < ActionController::Base\n  before_action :authenticate_user!\nend\n",
+      "app/controllers/invoices_controller.rb": "class InvoicesController < ApplicationController\n  def show\n    invoice = Invoice.find(params[:id])\n    render json: invoice\n  end\nend\n",
+      "app/models/user.rb": "class User < ApplicationRecord\n  has_many :invoices\nend\n",
+      "app/models/invoice.rb": "class Invoice < ApplicationRecord\n  belongs_to :user\nend\n"
+    }
+  },
+  {
+    "id": "javascript_cross_file_sql_fixed",
+    "language": "javascript",
+    "expected_cwes": [],
+    "targets": [
+      "db.js"
+    ],
+    "sources": {
+      "routes.js": "import express from 'express';\nimport {findUser} from './db.js';\nconst app = express();\napp.get('/users', async (req, res) => res.json(await findUser(req.query.name)));\napp.listen(3000);\n",
+      "db.js": "import pg from 'pg';\nconst pool = new pg.Pool();\nexport async function findUser(name) {\n  return (await pool.query('SELECT name FROM users WHERE name = $1', [name])).rows;\n}\n"
+    }
+  },
+  {
+    "id": "go_shell_fixed",
+    "language": "go",
+    "expected_cwes": [],
+    "sources": {
+      "main.go": "package main\nimport (\"net/http\"; \"os/exec\")\nfunc main() {\n http.HandleFunc(\"/lookup\", func(w http.ResponseWriter, r *http.Request) {\n  host := r.URL.Query().Get(\"host\")\n  if host != \"localhost\" && host != \"example.com\" { http.Error(w, \"invalid\", 400); return }\n  out, _ := exec.Command(\"nslookup\", host).Output()\n  w.Write(out)\n })\n http.ListenAndServe(\":8080\", nil)\n}\n"
+    }
+  },
+  {
+    "id": "ruby_cross_file_authorization_fixed",
+    "language": "ruby",
+    "expected_cwes": [],
+    "targets": [
+      "app/controllers/invoices_controller.rb"
+    ],
+    "sources": {
+      "config/routes.rb": "Rails.application.routes.draw do\n  resources :invoices, only: [:show]\nend\n",
+      "app/controllers/application_controller.rb": "class ApplicationController < ActionController::Base\n  before_action :authenticate_user!\nend\n",
+      "app/controllers/invoices_controller.rb": "class InvoicesController < ApplicationController\n  def show\n    invoice = current_user.invoices.find(params[:id])\n    render json: invoice\n  end\nend\n",
+      "app/models/user.rb": "class User < ApplicationRecord\n  has_many :invoices\nend\n",
+      "app/models/invoice.rb": "class Invoice < ApplicationRecord\n  belongs_to :user\nend\n"
+    }
   }
 ]

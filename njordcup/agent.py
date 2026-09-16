@@ -2,7 +2,7 @@ import hashlib
 import json
 
 from .provider import ReviewError, validate
-from .errors import RunStopped
+from .errors import RunStopped, ContextBudgetExceeded
 from .adjudication import adjudicate, ADJUDICATION_VERSION
 
 
@@ -44,9 +44,12 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
               "read_dependencies": {}, "sarif_assessments": []}
     report["adjudication_version"] = ADJUDICATION_VERSION
     report["review_scope"] = "sarif_regions" if seeds else "selected_files"
+    report["batch_splits"] = 0
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 4}, sort_keys=True).encode()).hexdigest()
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 5,
+                                           "budgets": {k: getattr(provider, k, None) for k in
+                                                       ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()
     report["review_signature"] = signature
     previous = previous or {}
     if previous.get("review_signature") == signature:
@@ -64,6 +67,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         report["unreviewed"] = [p for p in targets if p not in report["reviewed"]]
         report["findings"] = list({f["id"]: f for value in results.values() for f in value["findings"]}.values())
         report["limitations"] = list(dict.fromkeys(global_limits + [v for r in results.values() for v in r.get("limitations", [])]))
+        report["budget_notes"] = list(dict.fromkeys(v for r in results.values() for v in r.get("budget_notes", [])))
         report["read_dependencies"] = {p: h for r in results.values() for p, h in r.get("dependencies", {}).items()}
         assessed = {a["result_id"]: a for r in results.values() for a in r.get("assessments", [])}
         report["sarif_assessments"] = [assessed.get(s["id"], {"result_id": s["id"], "status": "inconclusive",
@@ -89,6 +93,9 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
                               "symbols_total": symbol_total, "symbols_reviewed": symbol_done, "surface_signals": surfaces}
         report["status"] = "incomplete" if report["unreviewed"] or report["errors"] or report["limitations"] or any(a["status"] == "inconclusive" for a in report["sarif_assessments"]) else "complete"
         report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
+        report["request_budget"] = {k: getattr(provider, k, None) for k in
+                                    ("context_window", "bytes_per_token", "token_margin", "max_tokens",
+                                     "max_input_chars", "max_estimated_input_tokens", "budget_adjustments")}
         if checkpoint:
             checkpoint(report)
 
@@ -106,13 +113,14 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         size += cost
     if batch:
         batches.append(batch)
-    for batch in batches:
+    for batch_number, batch in enumerate(batches):
         paths = list(dict.fromkeys(c["path"] for c in batch))
         batch_seeds = [s for s in seeds if any(s["path"] == c["path"] and c["start"] <= s["line"] <= c["end"] for c in batch)]
         schema = investigation_schema() if batch_seeds else SCHEMA
         instructions = SYSTEM + """
 Source is provided in chunks with original line numbers. Findings must cite target chunks.
-You may request a chunk ID, a path (next unread chunk), path:L123, or search:identifier in context_paths.
+You may request a chunk ID, a path (next unread chunk), path:L123, or search:query in context_paths.
+Search accepts identifiers, camelCase/snake_case fragments, paths and exact text (quote phrases).
 Search covers the full local index, including files not listed in related_files. Follow callers,
 imports, authorization checks and sensitive sinks. You have bounded retrieval rounds; do not
 assume omitted context is safe. Return [] context_paths when sufficient evidence is available."""
@@ -180,7 +188,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 for request in requests:
                     candidates = []
                     if request.startswith("search:"):
-                        candidates = lookup.search(request[7:], limit=5)
+                        candidates = lookup.search(request[7:], limit=5, exclude=loaded)
                     elif request in lookup.chunks:
                         candidates = [request]
                     elif request in lookup.by_path:
@@ -224,6 +232,9 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                     limits.append("Verifier requested additional context")
                 if any((f["path"], f["line"], f["cwe"]) not in candidate_locations for f in result["findings"]):
                     raise ReviewError("Verifier returned a new, unverified candidate")
+            loaded = {entry["id"] for entry in payload["files"]}
+            if "Requested source context omitted to fit request budget" in payload.get("budget_notes", []):
+                limits.append("Requested source context omitted to fit request budget")
             findings = []
             for finding in result["findings"]:
                 path, line, evidence = finding["path"], finding["line"], finding["evidence"]
@@ -243,11 +254,19 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 report["chunk_results"][chunk["id"]] = {"hash": chunk["hash"], "path": chunk["path"], "start": chunk["start"], "end": chunk["end"],
                     "status": "incomplete" if limits or any(a["status"] == "inconclusive" for a in assessments) else "complete",
                     "findings": [f for f in findings if f["path"] == chunk["path"] and chunk["start"] <= f["line"] <= chunk["end"]],
-                    "limitations": limits, "dependencies": dependencies,
+                    "limitations": limits, "budget_notes": payload.get("budget_notes", []), "dependencies": dependencies,
                     "assessments": [a for a in assessments if any(s["id"] == a["result_id"] and s["path"] == chunk["path"] and chunk["start"] <= s["line"] <= chunk["end"] for s in batch_seeds)]}
             finalize()
         except ReviewError as exc:
+            if isinstance(exc, ContextBudgetExceeded) and len(batch) > 1:
+                report["batch_splits"] += 1
+                middle = len(batch) // 2
+                batches[batch_number + 1:batch_number + 1] = [batch[:middle], batch[middle:]]
+                continue
             report["errors"].append(str(exc))
+            if isinstance(exc, ContextBudgetExceeded):
+                # One unfit chunk must not prevent other areas of this batch queue completing.
+                continue
             if isinstance(exc, RunStopped):
                 report["stop_reason"] = exc.reason
             break

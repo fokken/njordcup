@@ -18,10 +18,43 @@ with `max_tokens`; verify compatibility with your deployment.
 
 Defaults: `--max-calls 20`, `--max-tokens 6000`, `--batch-chars 24000`,
 `--context-chars 24000`, `--context-rounds 3`, `--max-input-chars 80000`.
-The request cap includes messages and output-format schema and rejects oversized
-requests before contacting the server. It is a character cap, not exact token
-counting; set server limits using the model's tokenizer. Large repositories need
-more calls or more resumptions, not a repository-sized context window.
+The character cap includes messages and output-format schema. Optional metadata
+and flyover samples shrink to fit; review batches split when mandatory input is too
+large. Target source is never silently truncated. Large repositories need more
+calls or more resumptions, not a repository-sized context window.
+
+## Adaptive context budgeting
+
+Set `--context-window` to the context size configured on your server. It includes
+both input and output; njordcup reserves `--max-tokens` for output and
+`--token-margin` (default 1024) for server formatting overhead.
+
+```sh
+python3 -m njordcup /path/to/repo --model YOUR_MODEL \
+  --base-url http://localhost:11434/v1 --context-window 32768 --max-tokens 4000
+```
+
+Input tokens are **estimated**, not counted with the model's tokenizer. The default
+`--bytes-per-token 1` budgets one token per serialized UTF-8 byte, conservatively
+including JSON escaping and schemas. A larger divisor allows more input but risks
+underestimating tokens; only tune it against measurements for your deployed model.
+The margin is also an estimate of server overhead, not a guarantee. njordcup does
+not discover the server limit or change its configuration. Without `--context-window`,
+only the character cap applies.
+
+Before a request, optional catalogs, architectural memory and previous candidate
+hints can be removed. Flyovers reduce samples and record coverage changes. Focused
+reviews can omit reference chunks only with a saved limitation that keeps the review
+incomplete; evidence validation uses only source retained in the final request.
+If mandatory input still cannot fit, batches split. A single unfit chunk remains
+unreviewed with an error; lower `--batch-chars` to rebuild smaller chunks or raise
+the input budget. Candidates, scanner claims and target code are never trimmed.
+Server context errors are not automatically retried with smaller requests.
+
+Focused reports save `budget_notes`, `batch_splits`, and `request_budget` settings
+and invocation-wide estimate/adjustment counters. Budget changes invalidate reuse
+of chunk checkpoints when a review is invoked again. Use `--rerun` to revisit
+already completed SARIF groups in all-results mode.
 
 ## Source selection and indexing
 

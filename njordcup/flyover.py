@@ -105,6 +105,7 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
     payload = make_payload(sources, targets)
     overview = provider.ask(PROMPT, payload, OVERVIEW)
     validate_overview(overview, sources, targets)
+    overview["unknowns"].extend(payload.get("budget_notes", []))
     sampled = {s["path"] for s in payload["samples"]}
     if any(d["evidence_path"] not in sampled for d in overview["dependencies"]):
         raise ReviewError("Flyover cited dependency evidence outside sampled files")

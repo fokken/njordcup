@@ -13,7 +13,7 @@ import math
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
-from .errors import ReviewError, RunStopped
+from .errors import ReviewError, RunStopped, ContextBudgetExceeded
 from .runtime import RunControl
 
 
@@ -62,7 +62,8 @@ def validate(value, schema):
 class OpenAIProvider:
     def __init__(self, model, max_calls=20, cache=None, base_url="https://api.openai.com/v1",
                  api_key_env="OPENAI_API_KEY", output_mode="json_schema", max_tokens=6000, max_input_chars=80000,
-                 request_timeout=120, max_retries=2, retry_base=1, retry_max_delay=30, control=None, on_retry=None):
+                 request_timeout=120, max_retries=2, retry_base=1, retry_max_delay=30, control=None, on_retry=None,
+                 context_window=None, bytes_per_token=1, token_margin=1024):
         self.model, self.max_calls = model, max_calls
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -80,9 +81,14 @@ class OpenAIProvider:
         self.request_timeout, self.max_retries = request_timeout, max_retries
         self.retry_base, self.retry_max_delay = retry_base, retry_max_delay
         self.control, self.on_retry = control or RunControl(), on_retry
+        if (max_tokens <= 0 or max_input_chars <= 0 or not math.isfinite(bytes_per_token)
+                or bytes_per_token <= 0 or token_margin < 0
+                or (context_window is not None and context_window <= max_tokens + token_margin)):
+            raise ValueError("Context window must exceed output reservation plus margin; budgets must be positive")
+        self.context_window, self.bytes_per_token, self.token_margin = context_window, bytes_per_token, token_margin
+        self.max_estimated_input_tokens = self.budget_adjustments = 0
 
-    def ask(self, instructions, payload, schema):
-        self.control.check()
+    def request_body(self, instructions, payload, schema):
         body = {"model": self.model,
                 "messages": [{"role": "system", "content": instructions + "\nReturn JSON matching this schema: " + json.dumps(schema)},
                              {"role": "user", "content": json.dumps(payload, ensure_ascii=True)}],
@@ -91,10 +97,35 @@ class OpenAIProvider:
             body["response_format"] = {"type": "json_schema", "json_schema": {"name": "njordcup", "strict": True, "schema": schema}}
         elif self.output_mode == "json_object":
             body["response_format"] = {"type": "json_object"}
-        input_chars = sum(len(m["content"]) for m in body["messages"]) + len(json.dumps(body.get("response_format", {})))
+        return body
+
+    def request_size(self, body):
+        text = "".join(m["content"] for m in body["messages"]) + json.dumps(body.get("response_format", {}))
+        return len(text), math.ceil(len(text.encode("utf-8")) / self.bytes_per_token)
+
+    def fits(self, instructions, payload, schema):
+        chars, tokens = self.request_size(self.request_body(instructions, payload, schema))
+        return chars <= self.max_input_chars and (self.context_window is None or
+               tokens + self.max_tokens + self.token_margin <= self.context_window)
+
+    def fit_payload(self, instructions, payload, schema):
+        """Trim optional context in place so callers validate only transmitted evidence."""
+        from .budget import shrink_payload
+        while not self.fits(instructions, payload, schema):
+            self.control.check()
+            if not shrink_payload(payload):
+                raise ContextBudgetExceeded(
+                    "Mandatory request exceeds context window or character budget; "
+                    "reduce --batch-chars/--max-tokens or increase the configured input limits")
+            self.budget_adjustments += 1
+
+    def ask(self, instructions, payload, schema):
+        self.control.check()
+        self.fit_payload(instructions, payload, schema)
+        body = self.request_body(instructions, payload, schema)
+        input_chars, estimated_tokens = self.request_size(body)
         self.max_request_chars = max(self.max_request_chars, input_chars)
-        if input_chars > self.max_input_chars:
-            raise ReviewError(f"Request input exceeds {self.max_input_chars} character budget; lower source/context budgets or raise --max-input-chars")
+        self.max_estimated_input_tokens = max(self.max_estimated_input_tokens, estimated_tokens)
         encoded = json.dumps(body, sort_keys=True).encode()
         key = hashlib.sha256(self.base_url.encode() + b"\0" + encoded).hexdigest()
         cached = self.cache / (key + ".json") if self.cache else None

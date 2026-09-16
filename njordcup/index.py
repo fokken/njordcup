@@ -20,6 +20,13 @@ SIGNAL_PATTERNS = {k: re.compile(v, re.I) for k, v in SIGNALS.items()}
 IDENTIFIERS = re.compile(r"[^\W\d]\w*", re.UNICODE)
 
 
+def search_terms(text):
+    # Split conventions, not language grammars; preserve whole Unicode identifiers.
+    spaced = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", spaced).replace("_", " ")
+    return {term.casefold() for term in IDENTIFIERS.findall(text) + IDENTIFIERS.findall(spaced)}
+
+
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -186,6 +193,8 @@ class CodeIndex:
         self.lines = {p: source.splitlines() for p, source in sources.items()}
         self.chunks = {c["id"]: c for f in data["files"].values() for c in f["chunks"]}
         self.terms = defaultdict(set)
+        self.fragments = defaultdict(set)
+        self.text = {}
         self.by_path = {p: [c["id"] for c in f["chunks"]] for p, f in data["files"].items()}
         self.reverse = defaultdict(set)
         for path, deps in data["dependencies"].items():
@@ -193,20 +202,46 @@ class CodeIndex:
                 self.reverse[dep].add(path)
         for chunk_id, chunk in self.chunks.items():
             text = "\n".join(self.lines[chunk["path"]][chunk["start"] - 1:chunk["end"]])
+            self.text[chunk_id] = text.casefold()
             for term in set(IDENTIFIERS.findall(text + " " + chunk["path"])):
-                self.terms[term.lower()].add(chunk_id)
+                self.terms[term.casefold()].add(chunk_id)
+            for term in search_terms(text + " " + chunk["path"]):
+                self.fragments[term].add(chunk_id)
 
     def entry(self, chunk_id):
         c = self.chunks[chunk_id]
         return {"id": chunk_id, "path": c["path"], "start": c["start"], "end": c["end"],
                 "lines": "\n".join(f"{i}: {self.lines[c['path']][i - 1]}" for i in range(c["start"], c["end"] + 1))}
 
-    def search(self, query, limit=10):
-        scores = defaultdict(int)
-        for term in set(IDENTIFIERS.findall(query)):
-            for chunk_id in self.terms.get(term.lower(), ()):
-                scores[chunk_id] += 1
-        return sorted(scores, key=lambda c: (-scores[c], c))[:limit]
+    def search(self, query, limit=10, exclude=()):
+        if limit <= 0 or not query.strip():
+            return []
+        query = query.strip()[:512]
+        quoted = len(query) > 1 and query[0] == query[-1] and query[0] in "\"'"
+        needle = (query[1:-1] if quoted else query).casefold()
+        if not needle:
+            return []
+        scores = defaultdict(float)
+        excluded = set(exclude)
+        if not quoted:
+            for term in search_terms(query):
+                matches = self.fragments.get(term, ())
+                # Rare identifiers distinguish useful matches from ubiquitous names.
+                weight = 1 + len(self.chunks) / (1 + len(matches))
+                for chunk_id in matches:
+                    scores[chunk_id] += weight
+                for chunk_id in self.terms.get(term, ()):
+                    scores[chunk_id] += weight
+        # Literal matching includes punctuation, strings and paths without parsing code.
+        for chunk_id, chunk in self.chunks.items():
+            if chunk_id in excluded:
+                continue
+            if needle in chunk["path"].casefold():
+                scores[chunk_id] += 4 * (len(self.chunks) + 1)
+            if needle in self.text[chunk_id]:
+                scores[chunk_id] += 2 * (len(self.chunks) + 1)
+        return sorted((c for c in scores if c not in excluded),
+                      key=lambda c: (-scores[c], self.chunks[c]["path"], self.chunks[c]["start"]))[:limit]
 
     def related(self, paths, limit=15):
         candidates = set()

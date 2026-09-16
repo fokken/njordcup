@@ -35,8 +35,14 @@ samples source; indexing completeness is distinct from architectural understandi
 Small single-component repositories retain the lightweight flyover.
 
 Focused review uses bounded source batches and up to three retrieval rounds. The
-model can request chunks, original line locations, or identifier searches across
-the complete index. Related import/caller candidates help navigation. Findings are
+model can request chunks, original line locations, or searches across the complete
+index. Search ranks paths, literal text and whole identifiers, splits camelCase and
+snake_case identifiers into fragments, and weights rarer terms more heavily.
+Quoted searches match literal phrases, including punctuation. Already loaded chunks
+are excluded before limiting search results, so repeated searches can reach new code.
+Matches return source chunks with surrounding lines, not isolated matching tokens.
+Literal searches scan the indexed chunk text; there is no embedding model or external
+search service. Related import/caller candidates help navigation. Findings are
 challenged in a second model pass and checked against exact supplied source lines.
 Reports count reviewed chunks, lines, symbols and heuristic attack-surface signals.
 Coverage measures processing, not the absence of vulnerabilities.
