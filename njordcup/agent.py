@@ -46,7 +46,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     report["review_scope"] = "sarif_regions" if seeds else "selected_files"
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "version": 3}, sort_keys=True).encode()).hexdigest()
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 4}, sort_keys=True).encode()).hexdigest()
     report["review_signature"] = signature
     previous = previous or {}
     if previous.get("review_signature") == signature:
@@ -82,6 +82,8 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
                     item["chunks_total"] += 1
                     item["chunks_reviewed"] += chunk["id"] in complete
         report["coverage"] = {"chunks_total": len(units), "chunks_reviewed": len(complete),
+                              "indexing_methods": {method: sum(index["files"][p]["parser"] == method for p in targets)
+                                                   for method in ("python_ast", "lexical", "text")},
                               "lines_total": sum(c["end"] - c["start"] + 1 for c in units),
                               "lines_reviewed": sum(c["end"] - c["start"] + 1 for c in units if c["id"] in complete),
                               "symbols_total": symbol_total, "symbols_reviewed": symbol_done, "surface_signals": surfaces}

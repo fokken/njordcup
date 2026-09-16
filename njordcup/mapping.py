@@ -11,9 +11,10 @@ from .errors import RunStopped
 def hierarchical_flyover(sources, targets, provider, path, index, refresh=False, analyze=True):
     from .flyover import OVERVIEW, PROMPT, fingerprint, make_payload, provider_identity, validate_overview
     old = json.loads(path.read_text()) if path.is_file() else {}
-    if not analyze and not refresh and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
+    mode_matches = old.get("index_mode", "auto") == index.get("index_mode", "auto")
+    if not analyze and not refresh and mode_matches and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
         return old, True
-    compatible = old.get("version") == 2 and old.get("provider") == provider_identity(provider) and not refresh
+    compatible = old.get("version") == 2 and old.get("provider") == provider_identity(provider) and not refresh and mode_matches
     old_index = old.get("index_snapshot", {})
     affected = affected_files(old_index, index) if compatible else set(sources)
     old_areas = {a["component"]: (i, a) for i, a in enumerate(old.get("overview", {}).get("areas", []), 1) if "component" in a}
@@ -48,7 +49,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
     if old and changed:
         archives.append({k: v for k, v in old.items() if k != "archives"})
     snapshot = {"files": {p: {"hash": f["hash"]} for p, f in index["files"].items()}, "dependencies": index["dependencies"]}
-    memory = {"version": 2, "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
+    memory = {"version": 2, "index_mode": index.get("index_mode", "auto"), "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
               "overview": {"summary": f"{len(sources)} eligible files in {len(areas)} review components.",
                            "tech_stack": [], "dependencies": [], "areas": areas, "unknowns": []},
               "index_snapshot": snapshot, "index_stats": index["stats"], "reviews": carried,

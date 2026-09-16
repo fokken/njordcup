@@ -3,16 +3,29 @@
 [Back to README](../README.md)
 
 The local index inventories every eligible file and line before model analysis.
-It groups files by nested dependency manifests or module directories. Python uses
-AST symbol ranges and import/call metadata; other supported languages use lexical
-metadata with that limitation recorded in the index. These are candidate navigation
-edges, not a sound semantic call graph or taint analysis.
+Discovery is language agnostic: any UTF-8 text file is eligible, including unknown
+extensions, extensionless scripts, documentation and configuration. No language
+allowlist or parser installation is needed. Non-UTF-8 files are currently skipped.
+
+Files are grouped by known nested dependency manifests or module directories.
+`--index-mode auto` (default) enhances Python with AST symbol ranges and import/call
+metadata; other text receives best-effort lexical metadata. `--index-mode text`
+uses only bounded text chunks and Unicode-aware identifier search, even for Python.
+This mode does not infer symbols, imports or call edges. Manifest dependency edges
+remain available. Both modes retain original line numbers and cover eligible lines.
+
+Index statistics and focused-review coverage count files by indexing method:
+`python_ast`, `lexical`, and `text`. Missing symbol information is not evidence that
+a file has no functions. Lexical edges are navigation hints, not a sound semantic
+call graph or taint analysis. Model understanding still varies by language.
 
 Large files are chunked with original line numbers and preferred symbol boundaries.
 Oversized functions fall back to bounded line chunks. A single line exceeding the
 batch budget remains explicitly unreviewed. Default file-size limit: 2 MB, adjustable
-with `--max-file-bytes`. Supported source/config extensions, exclusions, lockfile
-skips and symlink protection are defined in [njordcup/repository.py](../njordcup/repository.py).
+with `--max-file-bytes`. Binary/control-byte files, common credential filenames,
+lockfiles, SARIF artifacts and symlinks are excluded. Additional filters are defined
+in [njordcup/repository.py](../njordcup/repository.py). UTF-8 detection and filename
+exclusions are not comprehensive secret detection.
 
 Multi-component repositories, repositories over 2,000 lines or over 40 files use
 progressive component flyovers. All selected files belong to an area, with no global

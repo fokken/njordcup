@@ -9,6 +9,9 @@ njordcup maps repository components, reviews bounded code chunks, and saves
 progress between runs. It can also investigate individual Semgrep SARIF findings
 or the entire imported scan.
 
+Source discovery accepts eligible UTF-8 text in any language, including unknown
+extensions and extensionless files. Use `--index-mode text` for generic indexing.
+
 ## Quick start
 
 Run from this checkout, or install with `pip install -e .` for the `njordcup` command.

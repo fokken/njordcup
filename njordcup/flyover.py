@@ -70,10 +70,12 @@ def provider_identity(provider):
     return {"model": provider.model, "base_url": provider.base_url, "output_mode": provider.output_mode}
 
 
-def read_memory(path, sources, targets, provider):
+def read_memory(path, sources, targets, provider, index_mode=None):
     memory = json.loads(path.read_text())
     if not isinstance(memory, dict) or memory.get("version") not in {1, 2} or memory.get("fingerprint") != fingerprint(sources, targets) or memory.get("provider") != provider_identity(provider):
         raise ReviewError("Memory is stale or incompatible; run a new flyover and select an area again")
+    if index_mode is not None and memory.get("index_mode", "auto") != index_mode:
+        raise ReviewError("Index mode changed; run a new flyover before selecting an area")
     if memory["version"] == 1 and not memory.get("sarif_scans"):
         validate_overview(memory.get("overview"), sources, targets)
     else:
@@ -84,9 +86,10 @@ def read_memory(path, sources, targets, provider):
 
 
 def flyover(sources, targets, provider, memory_path, refresh=False, repository_index=None):
+    index_mode = repository_index.get("index_mode", "auto") if repository_index else "auto"
     if not refresh and memory_path.is_file():
         try:
-            saved = read_memory(memory_path, sources, targets, provider)
+            saved = read_memory(memory_path, sources, targets, provider, index_mode=index_mode)
             if not saved.get("coverage", {}).get("pages_pending"):
                 return saved, True
         except (ValueError, KeyError, TypeError, ReviewError):
@@ -96,7 +99,7 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
         return hierarchical_flyover(sources, targets, provider, memory_path, repository_index, refresh)
     if not refresh and memory_path.is_file():
         try:
-            return read_memory(memory_path, sources, targets, provider), True
+            return read_memory(memory_path, sources, targets, provider, index_mode=index_mode), True
         except (ValueError, KeyError, TypeError, ReviewError):
             pass
     payload = make_payload(sources, targets)
@@ -112,7 +115,7 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
             raise ReviewError("Cannot preserve invalid memory; choose a new --memory path")
         archives = old.pop("archives", [])
         archives.append(old)
-    memory = {"version": 1, "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
+    memory = {"version": 1, "index_mode": index_mode, "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
               "coverage": payload["coverage"], "overview": overview, "reviews": [], "archives": archives}
     save_memory(memory_path, memory)
     return memory, False

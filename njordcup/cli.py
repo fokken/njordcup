@@ -74,6 +74,8 @@ def run(argv, control):
     parser.add_argument("--investigate-all", action="store_true", help="Investigate every result in the imported SARIF scan, resuming unfinished work")
     parser.add_argument("--rerun", action="store_true", help="Start selected reviews afresh instead of resuming checkpoints")
     parser.add_argument("--exclude", action="append", default=[])
+    parser.add_argument("--include", action="append", default=[], help="Restrict eligible files to repository-relative globs; repeatable")
+    parser.add_argument("--index-mode", choices=["auto", "text"], default="auto", help="Use optional language parsing or generic text-only indexing")
     parser.add_argument("--cache", type=Path, help="Opt-in local response cache directory")
     parser.add_argument("--output", type=Path, help="Write JSON report here instead of stdout")
     parser.add_argument("--dry-run", action="store_true", help="List review scope without contacting a model")
@@ -123,10 +125,10 @@ def run(argv, control):
             if artifact is not None and artifact.resolve().is_relative_to(root):
                 relative = artifact.resolve().relative_to(root).as_posix()
                 exclusions.extend([relative, relative + "/*"])
-        sources, targets, skipped = discover(root, args.base, exclusions, args.max_file_bytes)
+        sources, targets, skipped = discover(root, args.base, exclusions, args.max_file_bytes, args.include)
         control.check()
         previous_index = json.loads(index_path.read_text()) if index_path.is_file() else None
-        repository_index = build_index(sources, targets, previous_index, chunk_chars=max(32, args.batch_chars // 2 - 200))
+        repository_index = build_index(sources, targets, previous_index, chunk_chars=max(32, args.batch_chars // 2 - 200), index_mode=args.index_mode)
         control.check()
         if not args.dry_run:
             save_memory(index_path, repository_index)
@@ -154,7 +156,7 @@ def run(argv, control):
                     if not memory_path.is_file():
                         raise ReviewError("Run a flyover first before selecting an area")
                     # An area number must never be reinterpreted against regenerated memory.
-                    memory, reused = read_memory(memory_path, sources, targets, provider), True
+                    memory, reused = read_memory(memory_path, sources, targets, provider, index_mode=args.index_mode), True
                 elif args.sarif:
                     from .mapping import hierarchical_flyover
                     memory, reused = hierarchical_flyover(sources, targets, provider, memory_path, repository_index,
@@ -257,6 +259,7 @@ def run(argv, control):
                 elif args.investigate_all and not session_reviews:
                     report["status"] = "complete"
                 report["max_request_chars"] = getattr(provider, "max_request_chars", 0)
+                report["index_stats"] = repository_index["stats"]
                 report["memory_path"] = str(memory_path)
                 report["memory_reused"] = reused
                 report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}

@@ -5,9 +5,10 @@ from pathlib import Path
 import re
 import subprocess
 
-EXTENSIONS = set(".py .js .jsx .ts .tsx .go .rs .java .kt .cs .c .h .cpp .hpp .php .rb .sh .sql .yaml .yml .toml .json .tf .html .vue .svelte".split())
 IGNORED = {".git", ".agents", ".codex", ".venv", "venv", "node_modules", "vendor", "dist", "build", "__pycache__", ".security-review-cache", ".security-review", ".njordcup", ".njordcup-cache"}
 LOCKS = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock"}
+SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".keystore", ".jks"}
+SENSITIVE_NAMES = {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".netrc", ".npmrc", ".pypirc", ".git-credentials"}
 
 
 def git(root, *args):
@@ -17,7 +18,7 @@ def git(root, *args):
     return result.stdout.decode("utf-8", errors="surrogateescape")
 
 
-def discover(root: Path, base=None, excludes=(), max_bytes=2000000):
+def discover(root: Path, base=None, excludes=(), max_bytes=2000000, includes=()):
     """Snapshot eligible files; Git repositories honor Git ignore rules."""
     skipped = []
     try:
@@ -42,17 +43,23 @@ def discover(root: Path, base=None, excludes=(), max_bytes=2000000):
         reason = None
         if any(p in IGNORED for p in parts) or any(fnmatch.fnmatch(name, p) for p in excludes):
             reason = "excluded"
-        elif path.name.startswith(".env") or path.name in LOCKS or (path.suffix.lower() not in EXTENSIONS and path.name not in {"go.mod", "Gemfile", "requirements.txt", "pom.xml", "Dockerfile"}):
-            reason = "unsupported or sensitive file type"
+        elif includes and not any(fnmatch.fnmatch(name, p) for p in includes):
+            reason = "outside include patterns"
+        elif path.name.startswith(".env") or path.name in SENSITIVE_NAMES or path.suffix.lower() in SENSITIVE_SUFFIXES:
+            reason = "sensitive file name/type"
+        elif path.name in LOCKS or path.suffix.lower() in {".sarif", ".swp", ".swo"}:
+            reason = "lockfile or generated artifact"
         elif any((root.joinpath(*parts[:i])).is_symlink() for i in range(1, len(parts) + 1)) or not path.resolve().is_relative_to(root):
             reason = "symlink or outside repository"
+        elif not path.is_file():
+            reason = "not a regular file"
         else:
             try:
                 with path.open("rb") as handle:
                     raw = handle.read(max_bytes + 1)
                 if len(raw) > max_bytes:
                     reason = "file size limit"
-                elif b"\0" in raw:
+                elif any(byte < 32 and byte not in {9, 10, 12, 13} for byte in raw):
                     reason = "binary file"
                 else:
                     sources[name] = raw.decode("utf-8")

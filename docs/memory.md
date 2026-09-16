@@ -28,6 +28,8 @@ reviews. Root/ancestor manifests participate in dependency edges. Dynamic dispat
 reflection and unresolved cross-language links can evade inferred dependencies;
 use `--refresh-memory` for a conservative full reset. Small legacy flyovers reset
 as a whole. SARIF scans are archived on source changes and must be reimported.
+Changing `--index-mode` invalidates the old map and review checkpoints. Run a new
+flyover with the new mode before selecting an area.
 
 Prior snapshots move into `archives`. The menu and summary use the latest attempt
 for each current area; bounded prior-review summaries are supplied as context.

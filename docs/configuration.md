@@ -23,6 +23,28 @@ requests before contacting the server. It is a character cap, not exact token
 counting; set server limits using the model's tokenizer. Large repositories need
 more calls or more resumptions, not a repository-sized context window.
 
+## Source selection and indexing
+
+All eligible UTF-8 text files are included by default, regardless of language or
+extension. Use repeated repository-relative glob patterns to narrow the scope:
+
+```sh
+python3 -m njordcup /path/to/repo --index-only --index-mode text \
+  --include '*.swift' --include '*.ex' --include 'scripts/*' --exclude '*generated*'
+```
+
+`--include` patterns are combined as alternatives. `--exclude` takes precedence;
+includes do not override binary, credential, symlink, size or Git-ignore protections.
+These filters also restrict the source available for context retrieval and SARIF
+location resolution, so include relevant configuration and shared modules too.
+Globs match complete repository-relative paths using Python's `fnmatch`; `*` can
+match directory separators. Quote patterns so your shell does not expand them.
+
+`--index-mode auto` preserves optional Python AST parsing and best-effort lexical
+metadata for other files. `--index-mode text` uses general text chunks and identifier
+search without language-specific symbol parsing. Switching modes rebuilds metadata
+and requires a new flyover before reusing an area selection.
+
 ## Response caching
 
 `--cache /private/cache` enables response caching by endpoint, model and complete

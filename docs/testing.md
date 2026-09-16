@@ -14,6 +14,8 @@ Tests use mocked model responses and include a 250k-line index, checkpoint resum
 component invalidation, evidence validation and all-results SARIF accounting.
 Failure-injection tests cover bounded retries, call-budget accounting, timeouts,
 cancellation/resumption, rule/CWE mismatches, and missing or fabricated counterevidence.
+Language-agnostic tests cover unknown extensions, extensionless files, Unicode
+search, text-only indexing, source filters, and SARIF locations in additional languages.
 [evals/cases.json](../evals/cases.json) contains vulnerable/fixed SQL and shell-injection smoke fixtures;
 the evaluation command makes live model calls and reports CWE-level precision/recall,
 incomplete cases and usage. Four fixtures are not a production benchmark. No live

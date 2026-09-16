@@ -17,7 +17,7 @@ SIGNALS = {
     "secrets/crypto": r"\b(password|secret|token|encrypt|decrypt|hashlib)\b",
 }
 SIGNAL_PATTERNS = {k: re.compile(v, re.I) for k, v in SIGNALS.items()}
-IDENTIFIERS = re.compile(r"[A-Za-z_][A-Za-z_0-9]{2,}")
+IDENTIFIERS = re.compile(r"[^\W\d]\w*", re.UNICODE)
 
 
 def digest(value):
@@ -37,11 +37,11 @@ def component_for(path, manifest_dirs):
     return parts[0]
 
 
-def parse_file(path, source, chunk_chars):
+def parse_file(path, source, chunk_chars, index_mode="auto"):
     lines = source.splitlines()
     symbols, imports, calls, notes = [], [], [], []
-    parser = "lexical"
-    if path.endswith(".py"):
+    parser = "text" if index_mode == "text" else "lexical"
+    if index_mode == "auto" and path.endswith(".py"):
         try:
             tree = ast.parse(source)
             parser = "python_ast"
@@ -71,7 +71,10 @@ def parse_file(path, source, chunk_chars):
                 symbols.append({"name": match.group(1), "start": i, "end": i, "kind": "declaration"})
         imports = re.findall(r"(?:from\s+|require\s*\(|import\s*\(|import\s+|#include\s*)[\"'<]([^\"'>]+)", source)
         calls = re.findall(r"\b([A-Za-z_]\w*)\s*\(", source)
+    if parser == "text":
+        notes.append("Text-only indexing: symbol and call/import resolution unavailable")
     boundaries = {s["start"] for s in symbols} | {s["end"] + 1 for s in symbols}
+    boundaries.update(i + 1 for i, line in enumerate(lines, 1) if not line.strip())
     chunks, start, size = [], 1, 0
     def append(end):
         text = "\n".join(lines[start - 1:end])
@@ -90,9 +93,11 @@ def parse_file(path, source, chunk_chars):
             "imports": sorted(set(imports)), "calls": sorted(set(calls)), "chunks": chunks, "notes": notes}
 
 
-def build_index(sources, targets, previous=None, chunk_chars=10000):
+def build_index(sources, targets, previous=None, chunk_chars=10000, index_mode="auto"):
+    if index_mode not in {"auto", "text"}:
+        raise ValueError("index_mode must be auto or text")
     previous = previous or {}
-    reusable = previous.get("files", {}) if previous.get("version") == 1 and previous.get("chunk_chars") == chunk_chars else {}
+    reusable = previous.get("files", {}) if previous.get("version") == 2 and previous.get("chunk_chars") == chunk_chars and previous.get("index_mode") == index_mode else {}
     files, reused = {}, 0
     manifest_dirs = {str(PurePosixPath(p).parent) for p in sources if PurePosixPath(p).name in MANIFESTS}
     components = defaultdict(list)
@@ -102,7 +107,7 @@ def build_index(sources, targets, previous=None, chunk_chars=10000):
             metadata = dict(old)
             reused += 1
         else:
-            metadata = parse_file(path, source, chunk_chars)
+            metadata = parse_file(path, source, chunk_chars, index_mode)
         metadata["component"] = component_for(path, manifest_dirs)
         files[path] = metadata
         components[metadata["component"]].append(path)
@@ -148,12 +153,13 @@ def build_index(sources, targets, previous=None, chunk_chars=10000):
                 if candidate in files:
                     resolved.add(candidate)
         dependencies[path] = sorted(resolved - {path})
-    return {"version": 1, "chunk_chars": chunk_chars, "files": files,
+    methods = {method: sum(f["parser"] == method for f in files.values()) for method in ("python_ast", "lexical", "text")}
+    return {"version": 2, "index_mode": index_mode, "chunk_chars": chunk_chars, "files": files,
             "components": dict(components), "dependencies": dependencies, "targets": sorted(targets),
             "stats": {"files": len(files), "lines": sum(f["lines"] for f in files.values()),
                       "chunks": sum(len(f["chunks"]) for f in files.values()),
                       "symbols": sum(len(f["symbols"]) for f in files.values()),
-                      "components": len(components), "reused_files": reused}}
+                      "components": len(components), "reused_files": reused, "indexing_methods": methods}}
 
 
 def affected_files(previous, current):
