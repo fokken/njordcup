@@ -17,6 +17,10 @@ from .sarif import load_sarif, import_scan, scan_summary
 from .errors import RunStopped
 from .runtime import RunControl, handle_signals
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def positive(value):
     number = int(value)
@@ -27,8 +31,12 @@ def positive(value):
 
 def main(argv=None):
     control = RunControl()
-    with handle_signals(control):
-        return run(argv, control)
+    from .logging_setup import logging_session
+    with logging_session(), handle_signals(control):
+        started = time.monotonic()
+        result = run(argv, control)
+        log.info("Execution finished in %.1fs (exit %d)", time.monotonic() - started, result)
+        return result
 
 
 def nonnegative(value):
@@ -92,7 +100,11 @@ def run(argv, control):
     parser.add_argument("--area", type=positive, help="Approve review of a numbered area from saved memory")
     parser.add_argument("--flyover-only", action="store_true", help="Save the flyover without prompting or reviewing")
     parser.add_argument("--summary", action="store_true", help="Summarize saved audit progress without model calls")
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument("-v", "--verbose", action="store_true", help="Detailed progress and request-budget logs on stderr")
+    verbosity.add_argument("--quiet", action="store_true", help="Suppress progress logs; keep warnings, errors and finding notifications")
     args = parser.parse_args(argv)
+    logging.getLogger("njordcup").setLevel(logging.DEBUG if args.verbose else logging.WARNING if args.quiet else logging.INFO)
     if args.max_seconds:
         control.deadline = time.monotonic() + args.max_seconds
     root = args.repository.resolve()
@@ -141,12 +153,14 @@ def run(argv, control):
             destination = args.output or implementation_html_path
             if destination.resolve() in {memory_path, index_path, implementation_path, html_path}:
                 raise ReviewError("Implementation report must not overwrite audit or implementation results")
+            log.info("Rendering implementation HTML report")
             write_html(destination, json.loads(implementation_path.read_text()), implementation=True)
             print(f"Implementation HTML report saved to {destination}")
             return 0
         if args.summary or args.report:
             if not memory_path.is_file():
                 raise ReviewError("No saved audit memory; run a flyover first")
+            log.info("Reading saved audit for offline reporting")
             report = summarize(json.loads(memory_path.read_text()))
             report["memory_path"] = str(memory_path)
             if args.report:
@@ -165,10 +179,14 @@ def run(argv, control):
             if artifact is not None and artifact.resolve().is_relative_to(root):
                 relative = artifact.resolve().relative_to(root).as_posix()
                 exclusions.extend([relative, relative + "/*"])
+        log.info("Discovering eligible source files")
         sources, targets, skipped = discover(root, args.base, exclusions, args.max_file_bytes, args.include)
+        log.info("Discovery complete: %d eligible files, %d targets, %d skipped", len(sources), len(targets), len(skipped))
         control.check()
+        log.info("Building local source index")
         previous_index = json.loads(index_path.read_text()) if index_path.is_file() else None
         repository_index = build_index(sources, targets, previous_index, chunk_chars=max(32, args.batch_chars // 2 - 200), index_mode=args.index_mode)
+        log.info("Index ready: %d lines, %d chunks, %d components; %d files reused", repository_index["stats"]["lines"], repository_index["stats"]["chunks"], repository_index["stats"]["components"], repository_index["stats"]["reused_files"])
         control.check()
         if not args.dry_run:
             save_memory(index_path, repository_index)
@@ -189,9 +207,10 @@ def run(argv, control):
                                       request_timeout=args.request_timeout, max_retries=args.max_retries,
                                       context_window=args.context_window, bytes_per_token=args.bytes_per_token, token_margin=args.token_margin,
                                       retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
-                                      on_retry=lambda event: print(f"{event['reason']}; retry {event['retry']} in {event['delay_seconds']:.1f}s", file=sys.stderr))
+                                      on_retry=lambda event: log.warning("%s; retry %d in %.1fs", event["reason"], event["retry"], event["delay_seconds"]))
             from .implementation import analyze_implementation, load_implementation, review_implementation_context
             implementation = load_implementation(implementation_path, sources, targets, repository_index)
+            log.info("Implementation context: %s", "compatible saved analysis available" if implementation else "no compatible saved analysis")
             if args.implementation_analysis:
                 report = analyze_implementation(sources, targets, provider, implementation_path, repository_index,
                                                 refresh=args.rerun or args.refresh_memory)
@@ -210,7 +229,9 @@ def run(argv, control):
                 else:
                     memory, reused = flyover(sources, targets, provider, memory_path, args.refresh_memory, repository_index, implementation=implementation)
                 if args.sarif:
+                    log.info("Importing SARIF results")
                     scan = load_sarif(args.sarif, root, sources)
+                    log.info("SARIF import: %d candidates", len(scan["candidates"]))
                     import_scan(memory, scan, repository_index)
                     save_memory(memory_path, memory)
                 scanner = memory.get("sarif_scans", {}).get(memory.get("active_sarif_scan"))
@@ -224,6 +245,8 @@ def run(argv, control):
                 automatic_ids = [i for i, area in enumerate(areas, 1) if "component" in area]
                 queue_ids = scanner["area_ids"] if args.investigate_all else automatic_ids if args.automatic else []
                 queued = iter(i for i in queue_ids if args.rerun or i not in completed)
+                if args.automatic or args.investigate_all:
+                    log.info("Review queue: %d areas, %d already complete", sum(args.rerun or i not in completed for i in queue_ids), sum(i in completed for i in queue_ids))
                 notified = set()
                 session_reviews = []
                 code_lookup = None
@@ -258,6 +281,7 @@ def run(argv, control):
                             continue
                         raise ReviewError("Area number out of range; no review started")
                     area = areas[selected - 1]
+                    log.info("Starting area %d/%d: %r", selected, len(areas), area["title"])
                     scoped = area["paths"] if area.get("sarif_candidates") else [p for p in targets if p in area["paths"]]
                     before = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
                     prior = next((a["report"] for a in reversed(memory.get("reviews", [])) if a["area_id"] == selected), None)
@@ -269,6 +293,7 @@ def run(argv, control):
                         saved = {**partial, "selected_area": {"id": selected, **area},
                                  "usage": {k: getattr(provider, k, 0) - value for k, value in before.items()}}
                         attempt_id = record_review(memory_path, memory, selected, saved, attempt_id)["id"]
+                        log.debug("Checkpoint saved for area %d: %d/%d chunks reviewed, %d findings", selected, partial.get("coverage", {}).get("chunks_reviewed", 0), partial.get("coverage", {}).get("chunks_total", 0), len(partial.get("findings", [])))
                         if args.automatic:
                             for finding in partial.get("findings", []):
                                 key = (finding["path"], finding["line"], finding["cwe"])
@@ -290,11 +315,11 @@ def run(argv, control):
                     report["usage"] = {k: getattr(provider, k, 0) - value for k, value in before.items()}
                     attempt = record_review(memory_path, memory, selected, report, attempt_id)
                     session_reviews.append(attempt["report"])
+                    log.info("Area %d saved: %s, %d findings", selected, report["status"], len(report.get("findings", [])))
                     if report.get("stop_reason"):
                         break
                     if not interactive and not args.investigate_all and not args.automatic:
                         break
-                    print(f"Saved area {selected}: {report['status']}, {len(report.get('findings', []))} findings.", file=sys.stderr)
                     for finding in ([] if args.automatic else report.get("findings", [])):
                         print(f"  {finding['severity']}: {finding['title']} ({finding['path']}:{finding['line']})", file=sys.stderr)
                     selected = None
@@ -345,6 +370,7 @@ def run(argv, control):
             return 2
         return 1 if report.get("findings") else 0
     except RunStopped as exc:
+        log.warning("Execution stopped: %s", exc.reason)
         report = {"status": "incomplete", "stop_reason": exc.reason, "errors": [str(exc)],
                   "memory_path": str(memory_path) if "memory_path" in locals() else None}
         if "memory" in locals():

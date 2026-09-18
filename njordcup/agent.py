@@ -5,6 +5,10 @@ from .provider import ReviewError, validate
 from .errors import RunStopped, ContextBudgetExceeded
 from .adjudication import adjudicate, ADJUDICATION_VERSION
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def obj(properties):
     return {"type": "object", "properties": properties, "required": list(properties), "additionalProperties": False}
@@ -100,6 +104,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
             checkpoint(report)
 
     pending = [c for c in units if c["id"] not in report["chunk_results"]]
+    log.info("Review scope: %d target chunks, %d resumed, %d pending", len(units), len(report["chunk_results"]), len(pending))
     batches, batch, size = [], [], 0
     for chunk in pending:
         cost = len(json.dumps(lookup.entry(chunk["id"])))
@@ -114,6 +119,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     if batch:
         batches.append(batch)
     for batch_number, batch in enumerate(batches):
+        log.info("Review batch %d/%d: %d target chunks", batch_number + 1, len(batches), len(batch))
         paths = list(dict.fromkeys(c["path"] for c in batch))
         batch_seeds = [s for s in seeds if any(s["path"] == c["path"] and c["start"] <= s["line"] <= c["end"] for c in batch)]
         schema = investigation_schema() if batch_seeds else SCHEMA
@@ -155,6 +161,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
         limits, remaining = [], context_chars
         def ask(instructions):
             nonlocal loaded, remaining
+            log.info("Model stage: %s (%d source chunks)", payload["stage"], len(payload["files"]))
             result = provider.ask(instructions, payload, schema)
             # Budget fitting can remove context. Retrieval must reflect the actual
             # request, and removed chunks must not continue consuming the allowance.
@@ -193,6 +200,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 requests = list(dict.fromkeys(result["context_paths"]))
                 if not requests:
                     break
+                log.debug("Retrieval round %d/%d: %d context requests", round_number + 1, context_rounds, len(requests))
                 payload["retrieval_notes"] = []
                 for request in requests:
                     candidates = []
@@ -266,10 +274,12 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
             finalize()
         except ReviewError as exc:
             if isinstance(exc, ContextBudgetExceeded) and len(batch) > 1:
+                log.info("Splitting oversized batch of %d chunks", len(batch))
                 report["batch_splits"] += 1
                 middle = len(batch) // 2
                 batches[batch_number + 1:batch_number + 1] = [batch[:middle], batch[middle:]]
                 continue
+            log.warning("Review batch stopped: %s", type(exc).__name__)
             report["errors"].append(str(exc))
             if isinstance(exc, ContextBudgetExceeded):
                 # One unfit chunk must not prevent other areas of this batch queue completing.

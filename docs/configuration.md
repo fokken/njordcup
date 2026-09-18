@@ -132,3 +132,28 @@ command to resume saved checkpoints. Execution remains sequential.
 
 - [Getting started](getting-started.md)
 - [Resource planning and benchmarks](resource-planning.md)
+
+## Execution logging
+
+Progress logs go to **stderr**, with local timestamps and severity levels. Standard
+output remains JSON for audit commands. By default, logs describe discovery/indexing,
+saved-analysis reuse, mapping pages, review queues and batches, model stages, network
+request start/finish times, and completed areas. A request-start line remains visible
+while the server is generating a response; the finish line reports elapsed time.
+
+- `--verbose` (or `-v`) adds request character/token estimates, budget reductions,
+  reported token usage, retrieval rounds, and saved checkpoint details.
+- `--quiet` suppresses progress/debug logs, while keeping warnings, errors, prompts,
+  and potential-issue notifications.
+
+```sh
+python3 -m njordcup /path/to/repo --automatic --model YOUR_MODEL \
+  --base-url http://localhost:11434/v1 --verbose \
+  > audit.json 2> audit.log
+```
+
+Progress logs do not dump source, prompts, raw model responses, API keys, or endpoint
+URLs. They can include component/area names and timing/usage metadata. Existing
+finding notifications still include finding titles, paths and CWEs. Keep redirected
+logs outside the audited source tree, or exclude their path from discovery. Logging
+is configured for each CLI invocation and does not change the application's root logger.

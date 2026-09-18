@@ -24,6 +24,8 @@ after persistence. HTML tests cover offline generation, escaped hostile content,
 and protection of memory/index files.
 Implementation-analysis tests cover separate output, partial resumption, stale/scope
 rejection, and security reuse that saves mapping calls while still reviewing source.
+Logging tests check stderr/stdout separation, verbosity, checkpoint visibility,
+request timing/cache events, sensitive-payload exclusion, and handler cleanup.
 Regression tests cover Git subdirectory scope, index protection during summaries,
 completed SARIF scan exit codes, malformed input, flyover resumption/coverage, and
 retrieval bookkeeping after context trimming.

@@ -9,6 +9,10 @@ from .flyover import OVERVIEW, STRINGS, fingerprint, make_payload, provider_iden
 from .memory import save_memory
 from .provider import validate
 
+import logging
+
+log = logging.getLogger(__name__)
+
 SCHEMA = obj({**OVERVIEW['properties'], 'languages': STRINGS,
               'implementation_details': STRINGS, 'data_flows': STRINGS})
 PROMPT = '''Describe how this implementation works. This is implementation analysis, not a vulnerability audit.
@@ -83,11 +87,14 @@ def analyze_implementation(sources, targets, provider, path, index, refresh=Fals
         report['saved_at'] = datetime.now(timezone.utc).isoformat()
         report['usage_this_invocation'] = {k: getattr(provider, k, 0) for k in ('calls', 'input_tokens', 'output_tokens', 'cache_hits', 'retries')}
         save_memory(path, report)
+        log.debug("Implementation checkpoint saved: %d/%d pages complete", len(completed), len(report["pages"]))
 
     checkpoint()
+    log.info("Implementation analysis: %d pages complete, %d pending", report["coverage"]["pages_complete"], report["coverage"]["pages_pending"])
     for page in report['pages'].values():
         if page['status'] == 'complete':
             continue
+        log.info("Describing implementation component %r (%d files)", page["component"], len(page["paths"]))
         try:
             payload = make_payload({p: sources[p] for p in page['paths']}, page['paths'], char_budget=18000)
             payload['component'] = page['component']
@@ -101,6 +108,7 @@ def analyze_implementation(sources, targets, provider, path, index, refresh=Fals
             page.update(status='complete', analysis=analysis, coverage=payload['coverage'])
             checkpoint()
         except ReviewError as exc:
+            log.warning("Implementation page failed: %s", type(exc).__name__)
             report['errors'].append(str(exc))
             if isinstance(exc, RunStopped):
                 report['stop_reason'] = exc.reason

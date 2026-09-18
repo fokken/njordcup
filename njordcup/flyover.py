@@ -7,6 +7,10 @@ from .agent import obj, STRING
 from .provider import ReviewError, validate
 from .memory import save_memory
 
+import logging
+
+log = logging.getLogger(__name__)
+
 STRINGS = {"type": "array", "items": STRING}
 AREA = obj({"title": STRING, "reason": STRING, "features": STRINGS,
             "attack_surfaces": STRINGS, "paths": STRINGS})
@@ -94,11 +98,13 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
         except (ValueError, KeyError, TypeError, ReviewError):
             pass
     if saved and not saved.get("coverage", {}).get("pages_pending"):
+        log.info("Reusing saved architectural flyover")
         return saved, True
     if repository_index and (implementation or (saved and saved.get("version") == 2) or len(repository_index["components"]) > 1
                              or repository_index["stats"]["lines"] > 2000 or len(sources) > 40):
         from .mapping import hierarchical_flyover
         return hierarchical_flyover(sources, targets, provider, memory_path, repository_index, refresh, implementation=implementation)
+    log.info("Starting architectural flyover for %d target files", len(targets))
     payload = make_payload(sources, targets)
     overview = provider.ask(PROMPT, payload, OVERVIEW)
     validate_overview(overview, sources, targets)
@@ -116,4 +122,5 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
     memory = {"version": 1, "index_mode": index_mode, "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
               "coverage": payload["coverage"], "overview": overview, "reviews": [], "archives": archives}
     save_memory(memory_path, memory)
+    log.info("Flyover saved: %d suggested areas", len(overview["areas"]))
     return memory, False

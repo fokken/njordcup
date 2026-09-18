@@ -39,7 +39,7 @@ to generate its separate HTML report.
 ## Documentation
 
 - [Getting started](docs/getting-started.md): workflows, review scope, and exit codes.
-- [Configuration](docs/configuration.md): providers, credentials, budgets, and caching.
+- [Configuration](docs/configuration.md): providers, budgets, caching, and execution logging.
 - [Semgrep SARIF](docs/sarif.md): importing findings, investigating all results, and resuming.
 - [Implementation analysis](docs/implementation-analysis.md): saved implementation descriptions and security reuse.
 - [HTML reports](docs/reporting.md): formatted findings, evidence, and coverage.

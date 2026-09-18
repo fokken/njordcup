@@ -7,12 +7,17 @@ from .memory import save_memory
 from .provider import ReviewError
 from .errors import RunStopped
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def hierarchical_flyover(sources, targets, provider, path, index, refresh=False, analyze=True, implementation=None):
     from .flyover import OVERVIEW, PROMPT, fingerprint, make_payload, provider_identity, validate_overview
     old = json.loads(path.read_text()) if path.is_file() else {}
     mode_matches = old.get("index_mode", "auto") == index.get("index_mode", "auto")
     if not analyze and not refresh and mode_matches and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
+        log.info("Reusing saved component map")
         return old, True
     compatible = old.get("version") == 2 and old.get("provider") == provider_identity(provider) and not refresh and mode_matches
     old_index = old.get("index_snapshot", {})
@@ -104,11 +109,14 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
         if memory["coverage"]["pages_pending"]:
             memory["overview"]["unknowns"].append("Some architectural pages await analysis; rerun --flyover-only to continue.")
         save_memory(path, memory)
+        log.debug("Component-map checkpoint saved")
 
     update()
+    log.info("Component map: %d pages complete, %d pending", memory["coverage"]["pages_complete"], len(pending))
     if not analyze:
         return memory, False
-    for key in pending:
+    for page_number, key in enumerate(pending, 1):
+        log.info("Mapping page %d/%d: %r", page_number, len(pending), key)
         page = memory["component_pages"][key]
         page_sources = {p: sources[p] for p in page["paths"]}
         payload = make_payload(page_sources, page["paths"], char_budget=18000)
@@ -127,6 +135,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
                 raise ReviewError("Flyover cited dependency evidence outside sampled files")
             page.update(status="complete", overview=overview, coverage=payload["coverage"])
         except ReviewError as exc:
+            log.warning("Mapping page failed: %s", type(exc).__name__)
             memory["mapping_errors"].append(str(exc))
             update()
             if isinstance(exc, RunStopped):

@@ -16,6 +16,11 @@ from urllib.parse import urlsplit
 from .errors import ReviewError, RunStopped, ContextBudgetExceeded
 from .runtime import RunControl
 
+import logging
+import time
+
+log = logging.getLogger(__name__)
+
 
 RETRYABLE_HTTP = {408, 429, 500, 502, 503, 504}
 
@@ -111,6 +116,7 @@ class OpenAIProvider:
     def fit_payload(self, instructions, payload, schema):
         """Trim optional context in place so callers validate only transmitted evidence."""
         from .budget import shrink_payload
+        before = self.budget_adjustments
         while not self.fits(instructions, payload, schema):
             self.control.check()
             if not shrink_payload(payload):
@@ -118,12 +124,15 @@ class OpenAIProvider:
                     "Mandatory request exceeds context window or character budget; "
                     "reduce --batch-chars/--max-tokens or increase the configured input limits")
             self.budget_adjustments += 1
+        if self.budget_adjustments != before:
+            log.debug("Request budget adjusted: %d reductions", self.budget_adjustments - before)
 
     def ask(self, instructions, payload, schema):
         self.control.check()
         self.fit_payload(instructions, payload, schema)
         body = self.request_body(instructions, payload, schema)
         input_chars, estimated_tokens = self.request_size(body)
+        log.debug("Request budget: %d input characters, %d estimated input tokens, %d output tokens reserved", input_chars, estimated_tokens, self.max_tokens)
         self.max_request_chars = max(self.max_request_chars, input_chars)
         self.max_estimated_input_tokens = max(self.max_estimated_input_tokens, estimated_tokens)
         encoded = json.dumps(body, sort_keys=True).encode()
@@ -134,6 +143,7 @@ class OpenAIProvider:
                 value = json.loads(cached.read_text())
                 validate(value, schema)
                 self.cache_hits += 1
+                log.info("Using cached model response")
                 return value
             except (OSError, ValueError, ReviewError):
                 pass
@@ -167,6 +177,7 @@ class OpenAIProvider:
         except (ValueError, TypeError) as exc:
             raise ReviewError("Model did not return valid structured output") from exc
         validate(value, schema)
+        log.debug("Model output validated; reported usage: %d input / %d output tokens", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
         if cached:
             self.cache.mkdir(parents=True, exist_ok=True, mode=0o700)
             with tempfile.NamedTemporaryFile(mode="w", dir=self.cache, delete=False) as handle:
@@ -184,6 +195,8 @@ class OpenAIProvider:
             if attempt:
                 self.retries += 1
             retry_after = None
+            started = time.monotonic()
+            log.info("Model request %d/%d started (attempt %d, I/O timeout %.1fs)", self.calls, self.max_calls, attempt + 1, self.request_timeout)
             try:
                 with urllib.request.build_opener(NoRedirect()).open(request, timeout=self.control.timeout(self.request_timeout)) as response:
                     chunks = []
@@ -195,6 +208,7 @@ class OpenAIProvider:
                         chunks.append(chunk)
                     result = json.loads(b"".join(chunks))
                 self.control.check()
+                log.info("Model request %d received in %.1fs", self.calls, time.monotonic() - started)
                 return result
             except urllib.error.HTTPError as exc:
                 retry_after = exc.headers.get("Retry-After") if exc.headers else None
