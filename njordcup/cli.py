@@ -88,6 +88,7 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--implementation-report", action="store_true", help="Generate an offline HTML report of saved implementation analysis")
     parser.add_argument("--implementation-file", type=Path, help="Implementation-analysis result to save or reuse")
     parser.add_argument("--report", action="store_true", help="Generate an offline HTML report from saved memory")
+    parser.add_argument("--synthesize", action="store_true", help="Generate or resume AI executive synthesis with --report or --implementation-report")
     parser.add_argument("--rerun", action="store_true", help="Start selected reviews afresh instead of resuming checkpoints")
     parser.add_argument("--exclude", action="append", default=[])
     parser.add_argument("--include", action="append", default=[], help="Restrict eligible files to repository-relative globs; repeatable")
@@ -128,6 +129,32 @@ def run(argv, control, attach_log=None):
         parser.error("--implementation-analysis cannot be combined with other action selectors")
     if args.implementation_report and (args.implementation_analysis or args.automatic or args.report or args.area or args.summary or args.flyover_only or args.dry_run or args.index_only or args.investigate_all or args.sarif or args.refresh_memory):
         parser.error("--implementation-report cannot be combined with other action selectors")
+    if args.synthesize and not (args.report or args.implementation_report):
+        parser.error("--synthesize requires --report or --implementation-report")
+    if args.synthesize and not args.model:
+        parser.error("--synthesize requires --model or REVIEW_MODEL")
+
+    def make_provider(synthesis=False):
+        return OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
+                              args.api_key_env, "prompt" if synthesis else args.output_mode,
+                              args.max_tokens, args.max_input_chars,
+                              request_timeout=args.request_timeout, max_retries=args.max_retries,
+                              trace_file=args.trace_file, context_window=args.context_window,
+                              bytes_per_token=args.bytes_per_token, token_margin=args.token_margin,
+                              retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
+                              on_retry=lambda event: log.warning("%s; retry %d in %.1fs", event["reason"], event["retry"], event["delay_seconds"]))
+
+    def attach_synthesis(report, saved, path):
+        from .synthesis import saved_synthesis, synthesize
+        state = saved_synthesis(report, saved)
+        if args.synthesize:
+            state = synthesize(report, saved, make_provider(synthesis=True), lambda: save_memory(path, saved))
+        # Never show synthesis from an older analysis snapshot.
+        report.pop('report_synthesis', None)
+        if state:
+            report['report_synthesis'] = state
+        return 2 if args.synthesize and state['status'] != 'complete' else 0
+
     try:
         default_memory = root / ".njordcup" / "memory.json"
         legacy_memory = root / ".security-review" / "memory.json"
@@ -168,20 +195,27 @@ def run(argv, control, attach_log=None):
             if destination.resolve() in {memory_path, index_path, implementation_path, html_path}:
                 raise ReviewError("Implementation report must not overwrite audit or implementation results")
             log.info("Rendering implementation HTML report")
-            write_html(destination, json.loads(implementation_path.read_text()), implementation=True)
+            saved = json.loads(implementation_path.read_text())
+            from .reporting import render_implementation_html
+            render_implementation_html({k: v for k, v in saved.items() if k != "report_synthesis"} if isinstance(saved, dict) else saved)
+            report = dict(saved)
+            result = attach_synthesis(report, saved, implementation_path)
+            write_html(destination, report, implementation=True)
             print(f"Implementation HTML report saved to {destination}")
-            return 0
+            return result
         if args.summary or args.report:
             if not memory_path.is_file():
                 raise ReviewError("No saved audit memory; run a flyover first")
             log.info("Reading saved audit for offline reporting")
-            report = summarize(json.loads(memory_path.read_text()))
+            saved = json.loads(memory_path.read_text())
+            report = summarize(saved)
             report["memory_path"] = str(memory_path)
             if args.report:
                 from .reporting import write_html
+                result = attach_synthesis(report, saved, memory_path)
                 write_html(args.output, report)
                 print(f"HTML report saved to {args.output}")
-                return 0
+                return result
             rendered = json.dumps(report, indent=2, ensure_ascii=True) + "\n"
             if args.output:
                 args.output.write_text(rendered)
@@ -216,13 +250,7 @@ def run(argv, control, attach_log=None):
             report = {"status": "dry_run", "targets": targets, "skipped": skipped,
                       "source_characters": sum(len(sources[p]) for p in targets)}
         else:
-            provider = OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
-                                      args.api_key_env, args.output_mode, args.max_tokens, args.max_input_chars,
-                                      request_timeout=args.request_timeout, max_retries=args.max_retries,
-                                      trace_file=args.trace_file,
-                                      context_window=args.context_window, bytes_per_token=args.bytes_per_token, token_margin=args.token_margin,
-                                      retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
-                                      on_retry=lambda event: log.warning("%s; retry %d in %.1fs", event["reason"], event["retry"], event["delay_seconds"]))
+            provider = make_provider()
             from .implementation import analyze_implementation, load_implementation, review_implementation_context
             implementation = load_implementation(implementation_path, sources, targets, repository_index)
             log.info("Implementation context: %s", "compatible saved analysis available" if implementation else "no compatible saved analysis")
@@ -310,6 +338,12 @@ def run(argv, control, attach_log=None):
                         attempt_id = record_review(memory_path, memory, selected, saved, attempt_id)["id"]
                         log.debug("Checkpoint saved for area %d: %d/%d chunks reviewed, %d findings", selected, partial.get("coverage", {}).get("chunks_reviewed", 0), partial.get("coverage", {}).get("chunks_total", 0), len(partial.get("findings", [])))
                         if args.automatic:
+                            for analysis in partial.get('narrative_analysis', []):
+                                key = ('narrative', analysis['id'])
+                                if key not in notified:
+                                    notified.add(key)
+                                    print('Model analysis saved (unstructured): ' + json.dumps(analysis['text'], ensure_ascii=True),
+                                          file=sys.stderr, flush=True)
                             for finding in partial.get("findings", []):
                                 key = (finding["path"], finding["line"], finding["cwe"])
                                 if key not in notified:
@@ -354,6 +388,13 @@ def run(argv, control, attach_log=None):
                               "reviews": session_reviews,
                               "findings": list({f["id"]: f for r in session_reviews for f in r.get("findings", [])}.values())}
                 report["area_progress"] = area_progress(memory)
+                if args.output_mode == 'prompt':
+                    latest_analysis = {a['area_id']: a['report'] for a in memory.get('reviews', [])}
+                    ids = queue_ids if args.automatic or args.investigate_all else [r['selected_area']['id'] for r in session_reviews]
+                    report['narrative_analysis'] = [dict(area_id=i, **a) for i in ids
+                                                    for a in latest_analysis.get(i, {}).get('narrative_analysis', [])]
+                    report['analysis_format'] = 'narrative'
+                    report['requires_manual_review'] = bool(report['narrative_analysis'])
                 stopped = next((r["stop_reason"] for r in session_reviews if r.get("stop_reason")), None)
                 if stopped:
                     report["stop_reason"] = stopped
@@ -392,7 +433,7 @@ def run(argv, control, attach_log=None):
             report["sarif"] = scan_summary(memory)
             report["area_progress"] = area_progress(memory)
         rendered = json.dumps(report, indent=2) + "\n"
-        if args.output:
+        if args.output and not (args.report or args.implementation_report):
             args.output.write_text(rendered)
         else:
             sys.stdout.write(rendered)

@@ -123,7 +123,7 @@ class ProviderTests(unittest.TestCase):
         for mode in ["json_schema", "json_object", "prompt"]:
             opener.return_value.open.return_value = self.response()
             provider = OpenAIProvider("local-model", base_url="http://localhost:11434/v1/", output_mode=mode)
-            self.assertEqual(provider.ask("review", {}, SCHEMA), answer())
+            self.assertEqual(provider.ask("review", {}, SCHEMA), json.dumps(answer()) if mode == "prompt" else answer())
             request = opener.return_value.open.call_args.args[0]
             self.assertEqual(request.full_url, "http://localhost:11434/v1/chat/completions")
             self.assertIsNone(request.get_header("Authorization"))

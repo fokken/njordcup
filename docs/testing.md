@@ -50,3 +50,11 @@ is executed. The default evaluation budget is 100 calls shared across all cases.
 
 - [Resource planning and benchmarks](resource-planning.md)
 - [Architecture and limitations](architecture.md)
+
+Free-form output tests exercise JSON API envelopes containing arbitrary text, verbatim
+Unicode/Markdown preservation, cache round trips, truncated checkpoints, failed
+resumption, SARIF non-promotion, and both HTML report workflows.
+
+Report synthesis tests cover bounded map/reduce calls, interrupted resumption, unchanged
+input reuse, stale-summary suppression, free-form/truncated responses, escaped HTML,
+both CLI report modes and preservation of original analyses and HTML on cancellation.

@@ -26,6 +26,11 @@ assessment, not proof. Related locations and code-flow source are retrieved with
 context limits. SARIF investigations cover the chunks containing reported locations,
 not every line of each affected file.
 
+With `--output-mode prompt`, scanner investigations are saved as free-form narratives.
+They are not parsed into confirmed/dismissed results, so scanner dispositions remain
+inconclusive and all-results mode returns `2`. The text is still available in memory,
+summaries and HTML. Use `json_schema` or `json_object` for structured adjudication.
+
 ## Evidence requirements
 
 Each disposition names the exact scanner rule and candidate ID, states the scanner

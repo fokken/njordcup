@@ -67,6 +67,8 @@ def review_context(memory, area_id=None):
             summary = {"area_id": attempt["area_id"], "status": report["status"],
                        "findings": [{k: f[k] for k in ("path", "line", "title", "cwe")}
                                     for f in report.get("findings", [])]}
+            if report.get('narrative_analysis'):
+                summary['narrative_excerpts'] = [a['text'][:1500] for a in report['narrative_analysis'][:2]]
             cost = len(json.dumps(summary))
             if size + cost > 8000:
                 break
@@ -106,6 +108,10 @@ def summarize(memory):
             "areas": progress, "area_counts": {"total": len(progress), **counts},
             "remaining_areas": [a["id"] for a in progress if a["status"] != "complete"],
             "findings": list(findings.values()), "findings_by_severity": severity,
+            "narrative_analysis": [{"area_id": i, **a} for i, attempt in latest.items()
+                                   for a in attempt['report'].get('narrative_analysis', [])],
+            "architectural_analysis": memory.get('narrative_analysis', []),
+            "requires_manual_review": any(a['report'].get('narrative_analysis') for a in latest.values()),
             "limitations": limitations, "errors": errors, "flyover_coverage": memory.get("coverage", {}),
             "flyover_unknowns": memory["overview"].get("unknowns", []),
             "review_attempts": len(attempts), "last_review_at": attempts[-1]["saved_at"] if attempts else None,

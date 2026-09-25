@@ -15,6 +15,7 @@ import urllib.request
 from urllib.parse import urlsplit
 from .errors import ReviewError, RunStopped, ContextBudgetExceeded
 from .runtime import RunControl
+from .narrative import Narrative, instructions as narrative_instructions
 
 import logging
 import time
@@ -116,8 +117,10 @@ class OpenAIProvider:
         self.trace_event('response', request_id=request_id, body=body, body_encoding=encoding, **fields)
 
     def request_body(self, instructions, payload, schema):
+        system = (narrative_instructions(schema) if self.output_mode == "prompt" else
+                  instructions + "\nReturn JSON matching this schema: " + json.dumps(schema))
         body = {"model": self.model,
-                "messages": [{"role": "system", "content": instructions + "\nReturn JSON matching this schema: " + json.dumps(schema)},
+                "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": json.dumps(payload, ensure_ascii=True)}],
                 "max_tokens": self.max_tokens}
         if self.output_mode == "json_schema":
@@ -163,7 +166,12 @@ class OpenAIProvider:
         if cached and cached.is_file():
             try:
                 value = json.loads(cached.read_text())
-                validate(value, schema)
+                if self.output_mode == 'prompt':
+                    if not isinstance(value, dict) or not isinstance(value.get('text'), str) or value.get('finish_reason') != 'stop':
+                        raise ReviewError('Invalid narrative cache entry')
+                    value = Narrative(value['text'])
+                else:
+                    validate(value, schema)
             except (OSError, ValueError, ReviewError):
                 pass
             else:
@@ -192,6 +200,14 @@ class OpenAIProvider:
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
             raise ReviewError("Provider returned no usable completion choice; check the endpoint's Chat Completions response format")
         finish = choices[0].get("finish_reason")
+        if self.output_mode == 'prompt':
+            message = choices[0].get('message', {})
+            if not isinstance(message, dict) or not isinstance(message.get('content'), str):
+                raise ReviewError('Provider message content must be text for prompt mode')
+            value = Narrative(message['content'], 'refusal' if message.get('refusal') else finish)
+            if cached and value.complete:
+                self.save_cache(cached, value.record())
+            return value
         if finish == "length":
             raise ReviewError("Model response truncated (finish_reason=length); increase --max-tokens if the server context allows, "
                               "or reduce --batch-chars/--context-chars. Review remains incomplete")
@@ -215,12 +231,15 @@ class OpenAIProvider:
         validate(value, schema)
         log.debug("Model output validated; reported usage: %d input / %d output tokens", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
         if cached:
-            self.cache.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with tempfile.NamedTemporaryFile(mode="w", dir=self.cache, delete=False) as handle:
-                json.dump(value, handle)
-                temporary = handle.name
-            os.replace(temporary, cached)
+            self.save_cache(cached, value)
         return value
+
+    def save_cache(self, cached, value):
+        self.cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with tempfile.NamedTemporaryFile(mode="w", dir=self.cache, delete=False) as handle:
+            json.dump(value, handle)
+            temporary = handle.name
+        os.replace(temporary, cached)
 
     def _request(self, request):
         for attempt in range(self.max_retries + 1):

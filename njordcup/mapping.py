@@ -6,6 +6,7 @@ from .index import affected_files
 from .memory import save_memory
 from .provider import ReviewError
 from .errors import RunStopped
+from .narrative import Narrative, overview as narrative_overview
 
 import logging
 
@@ -80,14 +81,20 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
                 memory["component_pages"][key] = {"component": component, "paths": page_paths, "hashes": hashes,
                                                  "status": "complete", "overview": page_overview(described["analysis"]),
                                                  "coverage": described["coverage"], "source": "implementation_analysis"}
+                if 'narrative' in described:
+                    memory['component_pages'][key]['narrative'] = deepcopy(described['narrative'])
                 continue
             if previous.get("hashes") == hashes and previous.get("status") == "complete" and not affected.intersection(page_paths):
                 memory["component_pages"][key] = previous
             else:
                 memory["component_pages"][key] = {"component": component, "paths": page_paths, "hashes": hashes, "status": "pending"}
+                if previous.get('hashes') == hashes and 'narrative' in previous:
+                    memory['component_pages'][key]['narrative'] = deepcopy(previous['narrative'])
                 pending.append(key)
 
     def update():
+        memory['narrative_analysis'] = [dict(component=p['component'], **p['narrative'])
+                                        for p in memory['component_pages'].values() if 'narrative' in p]
         summaries = [p["overview"] for p in memory["component_pages"].values() if p["status"] == "complete"]
         memory["overview"]["tech_stack"] = sorted({s for overview in summaries for s in overview["tech_stack"]})
         memory["overview"]["dependencies"] = list({(d["name"], d["evidence_path"]): d for overview in summaries for d in overview["dependencies"]}.values())
@@ -128,6 +135,15 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
                                for p in page["paths"]]
         try:
             overview = provider.ask(PROMPT + "\nThis is one page of a larger component. Summarize this page only.", payload, OVERVIEW)
+            if isinstance(overview, Narrative):
+                text = overview
+                page['narrative'] = text.record()
+                overview = narrative_overview(text, page['paths'])
+                if not text.complete:
+                    page.update(status='incomplete', overview=overview, coverage=payload['coverage'])
+                    memory['mapping_errors'].append('Unfinished or empty narrative saved; rerun to continue mapping')
+                    update()
+                    break
             validate_overview(overview, page_sources, page["paths"])
             overview["unknowns"].extend(payload.get("budget_notes", []))
             sampled = {s["path"] for s in payload["samples"]}

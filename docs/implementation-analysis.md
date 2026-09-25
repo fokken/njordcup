@@ -25,6 +25,12 @@ functionality areas, source hashes, sampling coverage, unknowns, errors, and mod
 for the current invocation. It is not a security findings report. Running this mode
 does not change security review attempts or mark security coverage complete.
 
+With `--output-mode prompt`, the complete model text is stored in each page's
+`narrative.text` and shown in its HTML report. No JSON is required inside the API
+message content. Language/stack lists stay empty unless supplied by a structured
+analysis; descriptions remain available in the narrative and can still seed security
+review context. Unfinished responses are retained and labeled incomplete.
+
 ## HTML implementation report
 
 ```sh
@@ -79,3 +85,6 @@ review context.
 The default result path is excluded from source discovery. If you put extra output
 copies inside the repository, exclude them from subsequent runs to keep the source
 snapshot consistent. See [configuration](configuration.md) and [automatic auditing](getting-started.md#automatic-auditing).
+
+Add `--synthesize` to `--implementation-report` for an optional saved AI executive
+summary across components; see [report synthesis](reporting.md#optional-ai-executive-summary).

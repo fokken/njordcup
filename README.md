@@ -34,7 +34,8 @@ to the review command. To build only the local index, run
 Use `--automatic` to audit all source components without prompts. Generate an offline
 HTML security report with `python3 -m njordcup /path/to/repo --report`.
 Use `--implementation-analysis` to describe the code and `--implementation-report`
-to generate its separate HTML report.
+to generate its separate HTML report. Add `--synthesize` and your model settings to
+either report command for a saved AI executive summary.
 
 ## Documentation
 

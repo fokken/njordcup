@@ -26,6 +26,26 @@ def e(value):
     return escape(str(value), quote=True)
 
 
+def narrative_section(title, entries):
+    if not entries:
+        return ''
+    blocks = ''.join(f"<article><h3>{e(a.get('component', 'Area ' + str(a.get('area_id', ''))))}</h3>"
+                     f"<p>Response: {'complete' if a.get('complete') else 'unfinished or empty'}. "
+                     f"Unstructured model analysis; claims require manual review.</p><pre>{e(a['text'])}</pre></article>"
+                     for a in entries)
+    return f'<section><h2>{e(title)}</h2>{blocks}</section>'
+
+
+def synthesis_section(report):
+    state = report.get('report_synthesis')
+    if not state:
+        return ''
+    text = (f"<pre>{e(state['text'])}</pre>" if state.get('status') == 'complete' else
+            f"<p>Synthesis unfinished: {e(state.get('error', 'Interrupted; rerun with --synthesize to resume.'))}</p>")
+    return ('<section><h2>AI executive summary</h2><p>Synthesis of saved analyses; '
+            'not an additional source review. Original analyses and coverage remain below.</p>' + text + '</section>')
+
+
 def render_html(summary):
     severity_order = {name: i for i, name in enumerate(('critical', 'high', 'medium', 'low'))}
     findings = sorted(summary['findings'], key=lambda f: (severity_order.get(f['severity'], 4), f['path'], f['line']))
@@ -63,15 +83,18 @@ def render_html(summary):
             f'{count} {status}' for status, count in scanner['counts'].items())) + '</p>' + ''.join(dispositions) + '</section>'
     counts = summary['area_counts']
     metrics = ''.join(f'<div class="metric"><strong>{value}</strong><span>{label}</span></div>' for value, label in (
-        (len(findings), 'Potential issues'), (summary['findings_by_severity']['critical'], 'Critical'),
+        (len(findings), 'Structured findings'), (summary['findings_by_severity']['critical'], 'Critical'),
         (summary['findings_by_severity']['high'], 'High'), (f"{counts['complete']} / {counts['total']}", 'Areas complete')))
     now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
     content = f'''<header><div class="brand">njordcup / Security review</div><h1>Audit report</h1>
 <p>{e(summary['summary'])}</p><p class="muted">Audit status: {e(summary['audit_status'])} · Generated {e(now)}<br>
 Last saved review: {e(summary.get('last_review_at') or 'No focused reviews yet')}</p>
 <p>Saved snapshot only. Findings are potential security issues supported by reviewed source; they require human assessment. Coverage records processing, not proof of security.</p></header>
+{synthesis_section(summary)}
 <div class="metrics">{metrics}</div>
-<section><h2>Identified issues</h2>{''.join(cards) or '<p>No issues recorded in the latest review attempts. Pending or incomplete areas may still contain vulnerabilities.</p>'}</section>
+<section><h2>Identified issues</h2>{''.join(cards) or '<p>No structured findings recorded. Read any narrative analysis below; an empty findings list does not mean the code is secure.</p>'}</section>
+{narrative_section('Security analysis', summary.get('narrative_analysis', []))}
+{narrative_section('Architectural analysis', summary.get('architectural_analysis', []))}
 <section><h2>Review coverage</h2><p>Reviewed / total within each area. Areas can overlap; these counts must not be added into a repository-wide percentage. SARIF reviews cover reported chunks.</p>
 <div class="table-wrap"><table><thead><tr><th>Area</th><th>Status</th><th>Lines</th><th>Chunks</th><th>Issues</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>
 {scanner_html}<section><h2>Limitations and outstanding questions</h2><ul>{gaps_html}</ul></section>
@@ -126,6 +149,13 @@ def render_implementation_html(report):
             rows.append(f"<tr><td><a href=\"#component-{number}\">{e(page['component'])}</a></td>"
                         f"<td>{e(status)}</td><td>{e(len(page['paths']))}</td>"
                         f"<td>{e(page.get('coverage', {}).get('sampled_files', '—'))}</td></tr>")
+            if 'narrative' in page:
+                completed += status == 'complete'
+                sections.append(f'<section id="component-{number}"><h2>{e(page["component"])}</h2>'
+                                f'<p>Unstructured implementation analysis. Status: {e(status)}.</p>'
+                                f'<pre>{e(page["narrative"]["text"])}</pre>'
+                                f'<details><summary>Source files</summary>{listing(page["paths"])}</details></section>')
+                continue
             if status != 'complete':
                 sections.append(f'<section id="component-{number}"><h2>{e(page["component"])}</h2><p>Implementation description pending.</p></section>')
                 continue
@@ -149,6 +179,7 @@ def render_implementation_html(report):
         content = f'''<header><div class="brand">njordcup / Implementation analysis</div><h1>Implementation report</h1>
 <p>{e(report['summary'])}</p><p class="muted">Analysis status: {e(report['status'])} · Saved {e(report.get('saved_at', 'unknown'))}</p>
 <p>This describes a saved source snapshot using bounded samples. It is separate from security findings and does not establish security-review coverage.</p></header>
+{synthesis_section(report)}
 <div class="metrics"><div class="metric"><strong>{completed} / {len(pages)}</strong><span>Pages described</span></div>
 <div class="metric"><strong>{len(report.get('languages', []))}</strong><span>Languages identified</span></div>
 <div class="metric"><strong>{e(report.get('index_stats', {}).get('files', '—'))}</strong><span>Files indexed</span></div>

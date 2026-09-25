@@ -12,9 +12,44 @@
 `--api-key-env` names the variable containing the credential, not the credential
 itself. Local endpoints can run without a key. HTTP redirects are rejected. Only
 the configured endpoint is contacted; there is no fallback to a cloud provider.
-For servers without strict schemas, choose `--output-mode json_object` or `prompt`.
-Every mode still validates model output locally. The adapter uses Chat Completions
-with `max_tokens`; verify compatibility with your deployment.
+The adapter uses Chat Completions with `max_tokens`; verify compatibility with your deployment.
+
+## Model output modes
+
+All modes expect the server's normal JSON API envelope. They differ in how
+`choices[0].message.content` is handled:
+
+| Mode | Model content |
+| --- | --- |
+| `json_schema` (default) | Requests a strict server-side schema, then parses and validates the model's JSON locally |
+| `json_object` | Requests JSON syntax from the server, then parses and validates the required schema locally |
+| `prompt` | Requests prose/Markdown and saves the model's text verbatim; no JSON parsing or schema validation of the content |
+
+Use `--output-mode prompt` when you want to accept the response as-is. Even JSON-looking
+text, Markdown fences and reasoning text are preserved rather than interpreted.
+API envelope validation, request budgets, retries, caching and source snapshots still
+apply. The JSON saved by njordcup is its own storage format, not a format imposed on
+the model. Prompt mode sends no `response_format` or output JSON schema.
+
+Free-form output is saved with its source scope and completion metadata, included in
+summaries and HTML reports, and reused as bounded analysis context. Flyover areas are
+mapped locally; languages, stack, severity and findings are not guessed from prose.
+Focused reviews proactively include bounded related/scanner source context. They do
+not use structured retrieval requests or the structured finding-verification pass.
+Automatic mode announces each saved narrative instead of trying to extract individual
+issues from it. Full narrative text can therefore appear in runtime logs in this mode.
+
+A completed prompt-mode review means its source batches received nonempty, finished
+responses; it does not imply that there were no issues. `findings` contains only
+structured findings, and `requires_manual_review` identifies narrative review output.
+Read `narrative_analysis` for the actual analysis. SARIF text is retained but automatic
+scanner verdicts remain inconclusive; use a structured mode for machine-checked
+adjudications. Truncated or otherwise unfinished text is also saved, marked incomplete,
+and is not cached as a successful response.
+
+Changing modes changes provider identity; regenerate the flyover rather than selecting
+an area from incompatible saved memory. Use `--output-mode prompt` consistently for
+analysis and resumed reviews.
 
 Defaults: `--max-calls 20`, `--max-tokens 6000`, `--batch-chars 24000`,
 `--context-chars 24000`, `--context-rounds 3`, `--max-input-chars 80000`.
@@ -160,7 +195,8 @@ is configured for each CLI invocation and does not change the application's root
 
 ### Diagnosing `ReviewError`
 
-Warnings include the error reason, not just the exception name. JSON reports and
+Warnings include the error reason, not just the exception name. The JSON/schema
+checks below apply to structured modes; prompt mode saves content as text. JSON reports and
 saved incomplete attempts also retain error details. Common distinctions:
 
 - `finish_reason=length`: the provider truncated its completion. Increase
@@ -197,8 +233,8 @@ Non-UTF-8 response bytes use base64 with `body_encoding: "base64"`. Connection
 failures are recorded as transport errors; interrupted responses may be partial.
 A terminated process can leave a request without a response entry.
 
-Cache hits have their own `cache_hit` event containing the request and validated
-cached output; no HTTP exchange occurred, and the original response envelope is not
+Cache hits have their own `cache_hit` event containing the request and cached
+output (structured data or prompt-mode text); no HTTP exchange occurred, and the original response envelope is not
 available from the cache. Tracing does not record requests rejected before sending
 by local input budgets, missing credentials, or exhausted call budgets.
 
@@ -240,3 +276,7 @@ SARIF input and the trace file. The configured logfile is excluded from discover
 keep the option when resuming or explicitly exclude the file if it is in the repository.
 There is no automatic log rotation. Command-line parsing and logfile-setup errors
 occur before logging to the file starts and are shown on stderr.
+
+`--synthesize` optionally generates a resumable prose executive summary with either
+HTML report command. It uses the same model and runtime budgets; see
+[report synthesis](reporting.md#optional-ai-executive-summary).

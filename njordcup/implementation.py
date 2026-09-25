@@ -8,6 +8,7 @@ from .errors import ReviewError, RunStopped
 from .flyover import OVERVIEW, STRINGS, fingerprint, make_payload, provider_identity, validate_overview
 from .memory import save_memory
 from .provider import validate
+from .narrative import Narrative, overview as narrative_overview
 
 import logging
 
@@ -75,6 +76,8 @@ def analyze_implementation(sources, targets, provider, path, index, refresh=Fals
             saved = previous.get('pages', {}).get(key, {}) if previous else {}
             report['pages'][key] = deepcopy(saved) if saved.get('status') == 'complete' and saved.get('hashes') == hashes else {
                 'component': component, 'paths': selected, 'hashes': hashes, 'status': 'pending'}
+            if saved.get('hashes') == hashes and 'narrative' in saved:
+                report['pages'][key]['narrative'] = deepcopy(saved['narrative'])
 
     def checkpoint():
         completed = [page['analysis'] for page in report['pages'].values() if page['status'] == 'complete']
@@ -99,6 +102,11 @@ def analyze_implementation(sources, targets, provider, path, index, refresh=Fals
             payload = make_payload({p: sources[p] for p in page['paths']}, page['paths'], char_budget=18000)
             payload['component'] = page['component']
             analysis = provider.ask(PROMPT, payload, SCHEMA)
+            narrative = analysis if isinstance(analysis, Narrative) else None
+            if narrative is not None:
+                page['narrative'] = narrative.record()
+                analysis = {**narrative_overview(narrative, page['paths']), 'languages': [],
+                            'implementation_details': [], 'data_flows': []}
             validate(analysis, SCHEMA)
             validate_overview(page_overview(analysis), sources, page['paths'])
             sampled = {s['path'] for s in payload['samples']}
@@ -106,7 +114,12 @@ def analyze_implementation(sources, targets, provider, path, index, refresh=Fals
                 raise ReviewError('Implementation analysis cited a dependency outside sampled source')
             analysis['unknowns'].extend(payload.get('budget_notes', []))
             page.update(status='complete', analysis=analysis, coverage=payload['coverage'])
+            if narrative is not None and not narrative.complete:
+                page['status'] = 'incomplete'
+                report['errors'].append('Unfinished or empty narrative saved; rerun to continue implementation analysis')
             checkpoint()
+            if page['status'] != 'complete':
+                break
         except ReviewError as exc:
             log.warning("Implementation page failed (%s): %r", type(exc).__name__, str(exc))
             report['errors'].append(str(exc))

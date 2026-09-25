@@ -4,6 +4,7 @@ import json
 from .provider import ReviewError, validate
 from .errors import RunStopped, ContextBudgetExceeded
 from .adjudication import adjudicate, ADJUDICATION_VERSION
+from .narrative import Narrative
 
 import logging
 
@@ -49,9 +50,11 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     report["adjudication_version"] = ADJUDICATION_VERSION
     report["review_scope"] = "sarif_regions" if seeds else "selected_files"
     report["batch_splits"] = 0
+    report['analysis_format'] = 'narrative' if getattr(provider, 'output_mode', None) == 'prompt' else 'structured'
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 6,
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 7,
+                                           "analysis_format": report['analysis_format'],
                                            "budgets": {k: getattr(provider, k, None) for k in
                                                        ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()
     report["review_signature"] = signature
@@ -59,7 +62,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     if previous.get("review_signature") == signature:
         for chunk_id, saved in previous.get("chunk_results", {}).items():
             chunk = lookup.chunks.get(chunk_id)
-            if chunk and chunk["path"] in target_set and saved["hash"] == chunk["hash"] and saved["status"] == "complete":
+            if chunk and chunk["path"] in target_set and saved["hash"] == chunk["hash"] and (saved["status"] == "complete" or report['analysis_format'] == 'narrative'):
                 if all(index["files"].get(p, {}).get("hash") == h for p, h in saved.get("dependencies", {}).items()):
                     report["chunk_results"][chunk_id] = saved
     global_limits = []
@@ -70,12 +73,16 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         report["reviewed"] = [p for p in targets if all(c["id"] in complete for c in units if c["path"] == p)]
         report["unreviewed"] = [p for p in targets if p not in report["reviewed"]]
         report["findings"] = list({f["id"]: f for value in results.values() for f in value["findings"]}.values())
+        report['narrative_analysis'] = list({a['id']: a for r in results.values() for a in r.get('narrative_analysis', [])}.values())
+        report['requires_manual_review'] = bool(report['narrative_analysis'])
         report["limitations"] = list(dict.fromkeys(global_limits + [v for r in results.values() for v in r.get("limitations", [])]))
         report["budget_notes"] = list(dict.fromkeys(v for r in results.values() for v in r.get("budget_notes", [])))
         report["read_dependencies"] = {p: h for r in results.values() for p, h in r.get("dependencies", {}).items()}
         assessed = {a["result_id"]: a for r in results.values() for a in r.get("assessments", [])}
         report["sarif_assessments"] = [assessed.get(s["id"], {"result_id": s["id"], "status": "inconclusive",
-                                        "reason": "Investigation has not completed", "finding_path": "", "finding_line": 0}) for s in seeds]
+                                        "reason": ("Prompt mode does not produce structured adjudications; see saved narrative analysis when available"
+                                                   if report['analysis_format'] == 'narrative' else "Investigation has not completed"),
+                                        "finding_path": "", "finding_line": 0}) for s in seeds]
         symbol_total = symbol_done = 0
         surfaces = {}
         for path in targets:
@@ -103,7 +110,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         if checkpoint:
             checkpoint(report)
 
-    pending = [c for c in units if c["id"] not in report["chunk_results"]]
+    pending = [c for c in units if report['chunk_results'].get(c['id'], {}).get('status') != 'complete']
     log.info("Review scope: %d target chunks, %d resumed, %d pending", len(units), len(report["chunk_results"]), len(pending))
     batches, batch, size = [], [], 0
     for chunk in pending:
@@ -168,7 +175,8 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
             loaded = {entry["id"] for entry in payload["files"]}
             remaining = max(0, context_chars - sum(len(json.dumps(entry)) for entry in payload["files"]
                                                   if entry["id"] not in payload["target_chunks"]))
-            validate(result, schema)
+            if not isinstance(result, Narrative):
+                validate(result, schema)
             return result
         for seed in batch_seeds:
             if seed.get("unresolved_related_locations", 0):
@@ -195,7 +203,34 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
         try:
             if getattr(provider, "control", None):
                 provider.control.check()
+            if report['analysis_format'] == 'narrative':
+                # Free-form responses cannot carry machine-readable retrieval requests.
+                # Supply bounded related source proactively, in addition to scanner flows.
+                for related in lookup.related(paths):
+                    for chunk_id in lookup.by_path.get(related['path'], [])[:2]:
+                        entry = lookup.entry(chunk_id)
+                        cost = len(json.dumps(entry))
+                        if chunk_id not in loaded and cost <= remaining:
+                            payload['files'].append(entry)
+                            loaded.add(chunk_id)
+                            remaining -= cost
+                            dependencies[entry['path']] = index['files'][entry['path']]['hash']
             result = ask(instructions)
+            if isinstance(result, Narrative):
+                if not result.complete:
+                    limits.append('Unfinished or empty narrative response saved')
+                if 'Requested source context omitted to fit request budget' in payload.get('budget_notes', []):
+                    limits.append('Requested source context omitted to fit request budget')
+                narrative = {'id': hashlib.sha256(json.dumps(payload['target_chunks']).encode() + str(result).encode()).hexdigest()[:16],
+                             'target_chunks': payload['target_chunks'], 'paths': paths, **result.record()}
+                for i, chunk in enumerate(batch):
+                    report['chunk_results'][chunk['id']] = {'hash': chunk['hash'], 'path': chunk['path'],
+                        'start': chunk['start'], 'end': chunk['end'], 'status': 'incomplete' if limits else 'complete',
+                        'findings': [], 'limitations': list(limits), 'dependencies': dict(dependencies),
+                        'budget_notes': payload.get('budget_notes', []), 'assessments': [],
+                        'narrative_analysis': [narrative] if i == 0 else []}
+                finalize()
+                continue
             for round_number in range(context_rounds):
                 requests = list(dict.fromkeys(result["context_paths"]))
                 if not requests:

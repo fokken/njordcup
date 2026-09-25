@@ -79,7 +79,9 @@ The queue visits each unfinished source component once per invocation. It does n
 loop indefinitely over inconclusive areas. Call budgets, retries, cancellation, and
 time limits still apply, including calls spent on architectural mapping. Rerun the
 same command to resume; completed areas are skipped unless `--rerun` is supplied.
-Final output includes saved findings from all source components. Exit codes remain
+Final output includes saved findings from all source components. In prompt mode,
+it also includes raw narrative analysis and announces each saved response; issue
+counts are not extracted from prose. Exit codes remain
 `1` for completed audits with findings and `2` for incomplete work, with the usual
 cancellation/time-limit codes.
 

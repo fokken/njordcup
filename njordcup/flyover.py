@@ -90,6 +90,11 @@ def read_memory(path, sources, targets, provider, index_mode=None):
 
 
 def flyover(sources, targets, provider, memory_path, refresh=False, repository_index=None, implementation=None):
+    if getattr(provider, 'output_mode', None) == 'prompt':
+        from .index import build_index
+        from .mapping import hierarchical_flyover
+        return hierarchical_flyover(sources, targets, provider, memory_path, repository_index or build_index(sources, targets),
+                                     refresh, implementation=implementation)
     index_mode = repository_index.get("index_mode", "auto") if repository_index else "auto"
     saved = None
     if not refresh and memory_path.is_file():
