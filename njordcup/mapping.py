@@ -135,7 +135,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
                 raise ReviewError("Flyover cited dependency evidence outside sampled files")
             page.update(status="complete", overview=overview, coverage=payload["coverage"])
         except ReviewError as exc:
-            log.warning("Mapping page failed: %s", type(exc).__name__)
+            log.warning("Mapping page failed (%s): %r", type(exc).__name__, str(exc))
             memory["mapping_errors"].append(str(exc))
             update()
             if isinstance(exc, RunStopped):

@@ -63,3 +63,62 @@ class LoggingTests(unittest.TestCase):
                 self.assertIn(expected, logs)
             for private in ('credential_marker', 'private_model_marker', 'private_prompt_marker', 'private_source_marker', 'http://localhost'):
                 self.assertNotIn(private, logs)
+
+    def test_review_error_reason_is_visible_and_saved(self):
+        from njordcup.agent import review
+        from njordcup.errors import ReviewError
+        from test_review import FakeProvider
+        from copy import deepcopy
+        saved = []
+        reason = 'Model response truncated (finish_reason=length)'
+        with patch('sys.stderr', new_callable=io.StringIO) as err, logging_session():
+            report = review({'app.py': 'safe()'}, ['app.py'], [], FakeProvider(ReviewError(reason)),
+                            checkpoint=lambda result: saved.append(deepcopy(result)))
+        self.assertIn(reason, err.getvalue())
+        self.assertEqual(report['status'], 'incomplete')
+        self.assertEqual(saved[-1]['errors'], [reason])
+        self.assertEqual(saved[-1]['unreviewed'], ['app.py'])
+
+    def test_log_file_tees_progress_appends_and_excludes_itself(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'app.py').write_text('safe()')
+            path = root / 'runtime.log'
+            for _ in range(2):
+                with patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.stderr', new_callable=io.StringIO) as err:
+                    self.assertEqual(main([tmp, '--dry-run', '--log-file', str(path)]), 0)
+                self.assertEqual(json.loads(out.getvalue())['targets'], ['app.py'])
+                self.assertIn('Discovery complete', err.getvalue())
+            self.assertEqual(path.read_text().count('Discovery complete'), 2)
+            self.assertEqual(path.read_text().count('Execution finished'), 2)
+            self.assertNotIn('"status": "dry_run"', path.read_text())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_log_file_includes_plain_notifications_and_restores_stderr(self):
+        import sys
+        with tempfile.TemporaryDirectory() as tmp, patch('sys.stderr', new_callable=io.StringIO) as err:
+            path = Path(tmp) / 'runtime.log'
+            with logging_session() as attach:
+                attach(path)
+                print('Potential issue saved: example', file=sys.stderr)
+                logging.getLogger('njordcup').warning('Example warning')
+            self.assertIs(sys.stderr, err)
+            self.assertEqual(path.read_text(), err.getvalue())
+            self.assertIn('Potential issue saved', path.read_text())
+            with logging_session():
+                logging.getLogger('njordcup').info('outside file session')
+            self.assertNotIn('outside file session', path.read_text())
+
+    def test_log_file_rejects_collisions_and_symlinks(self):
+        with tempfile.TemporaryDirectory() as tmp, patch('sys.stderr', new_callable=io.StringIO):
+            root = Path(tmp)
+            trace = root / 'trace.jsonl'
+            for extra in (['--log-file', str(root / '.njordcup/memory.json')],
+                          ['--log-file', str(trace), '--trace-file', str(trace)]):
+                self.assertEqual(main([tmp, '--dry-run', *extra]), 2)
+            target = root / 'existing.log'
+            target.write_text('untouched')
+            link = root / 'link.log'
+            link.symlink_to(target)
+            self.assertEqual(main([tmp, '--dry-run', '--log-file', str(link)]), 2)
+            self.assertEqual(target.read_text(), 'untouched')

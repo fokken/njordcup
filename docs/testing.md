@@ -26,6 +26,10 @@ Implementation-analysis tests cover separate output, partial resumption, stale/s
 rejection, and security reuse that saves mapping calls while still reviewing source.
 Logging tests check stderr/stdout separation, verbosity, checkpoint visibility,
 request timing/cache events, sensitive-payload exclusion, and handler cleanup.
+Opt-in trace tests cover retry correlation, error bodies, invalid JSON, cache hits,
+private permissions, append sessions, source exclusion, and destination protection.
+Runtime-logfile tests cover append behavior, stderr notifications, stdout separation,
+source exclusion, permissions, destination collisions, and stream cleanup.
 Regression tests cover Git subdirectory scope, index protection during summaries,
 completed SARIF scan exit codes, malformed input, flyover resumption/coverage, and
 retrieval bookkeeping after context trimming.

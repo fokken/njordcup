@@ -32,9 +32,9 @@ def positive(value):
 def main(argv=None):
     control = RunControl()
     from .logging_setup import logging_session
-    with logging_session(), handle_signals(control):
+    with logging_session() as attach_log, handle_signals(control):
         started = time.monotonic()
-        result = run(argv, control)
+        result = run(argv, control, attach_log)
         log.info("Execution finished in %.1fs (exit %d)", time.monotonic() - started, result)
         return result
 
@@ -57,7 +57,7 @@ def stop_exit(reason):
     return {"cancelled": 130, "sigterm": 143, "deadline": 124}.get(reason, 2)
 
 
-def run(argv, control):
+def run(argv, control, attach_log=None):
     parser = argparse.ArgumentParser(prog="njordcup", description="Review code for evidence-backed security issues")
     parser.add_argument("repository", type=Path, nargs="?", default=Path.cwd())
     parser.add_argument("--base", help="Review changed working-tree files relative to this Git commit")
@@ -103,6 +103,8 @@ def run(argv, control):
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-v", "--verbose", action="store_true", help="Detailed progress and request-budget logs on stderr")
     verbosity.add_argument("--quiet", action="store_true", help="Suppress progress logs; keep warnings, errors and finding notifications")
+    parser.add_argument("--trace-file", type=Path, help="Opt-in full request/response JSONL trace (contains source and model output; no HTTP headers)")
+    parser.add_argument("--log-file", type=Path, help="Append runtime logs and stderr notifications to a text file as well as the terminal")
     args = parser.parse_args(argv)
     logging.getLogger("njordcup").setLevel(logging.DEBUG if args.verbose else logging.WARNING if args.quiet else logging.INFO)
     if args.max_seconds:
@@ -146,6 +148,18 @@ def run(argv, control):
         if args.output and args.output.resolve() == implementation_path and not args.implementation_analysis:
             raise ReviewError("--output must not overwrite saved implementation analysis")
         implementation_html_path = implementation_path.with_suffix(".html")
+        if args.trace_file:
+            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.sarif, args.log_file]
+            if any(p is not None and args.trace_file.resolve() == p.resolve() for p in protected):
+                raise ReviewError("--trace-file must differ from audit artifacts, output and SARIF input")
+        if args.log_file:
+            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.sarif, args.trace_file]
+            if any(p is not None and args.log_file.resolve() == p.resolve() for p in protected):
+                raise ReviewError("--log-file must differ from audit artifacts, output, SARIF input and trace files")
+            if attach_log is None:
+                raise ReviewError('--log-file requires the CLI logging session')
+            attach_log(args.log_file)
+            log.info("Runtime log opened: %r", str(args.log_file))
         if args.implementation_report:
             if not implementation_path.is_file():
                 raise ReviewError("No saved implementation analysis; run --implementation-analysis first")
@@ -175,7 +189,7 @@ def run(argv, control):
                 sys.stdout.write(rendered)
             return 0
         exclusions = list(args.exclude)
-        for artifact in (memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.cache, args.sarif):
+        for artifact in (memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.cache, args.sarif, args.trace_file, args.log_file):
             if artifact is not None and artifact.resolve().is_relative_to(root):
                 relative = artifact.resolve().relative_to(root).as_posix()
                 exclusions.extend([relative, relative + "/*"])
@@ -205,6 +219,7 @@ def run(argv, control):
             provider = OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
                                       args.api_key_env, args.output_mode, args.max_tokens, args.max_input_chars,
                                       request_timeout=args.request_timeout, max_retries=args.max_retries,
+                                      trace_file=args.trace_file,
                                       context_window=args.context_window, bytes_per_token=args.bytes_per_token, token_margin=args.token_margin,
                                       retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
                                       on_retry=lambda event: log.warning("%s; retry %d in %.1fs", event["reason"], event["retry"], event["delay_seconds"]))
@@ -370,7 +385,7 @@ def run(argv, control):
             return 2
         return 1 if report.get("findings") else 0
     except RunStopped as exc:
-        log.warning("Execution stopped: %s", exc.reason)
+        log.warning("Execution stopped (%s): %r", exc.reason, str(exc))
         report = {"status": "incomplete", "stop_reason": exc.reason, "errors": [str(exc)],
                   "memory_path": str(memory_path) if "memory_path" in locals() else None}
         if "memory" in locals():

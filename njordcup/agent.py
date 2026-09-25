@@ -279,7 +279,7 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 middle = len(batch) // 2
                 batches[batch_number + 1:batch_number + 1] = [batch[:middle], batch[middle:]]
                 continue
-            log.warning("Review batch stopped: %s", type(exc).__name__)
+            log.warning("Review batch stopped (%s): %r", type(exc).__name__, str(exc))
             report["errors"].append(str(exc))
             if isinstance(exc, ContextBudgetExceeded):
                 # One unfit chunk must not prevent other areas of this batch queue completing.

@@ -108,7 +108,7 @@ def analyze_implementation(sources, targets, provider, path, index, refresh=Fals
             page.update(status='complete', analysis=analysis, coverage=payload['coverage'])
             checkpoint()
         except ReviewError as exc:
-            log.warning("Implementation page failed: %s", type(exc).__name__)
+            log.warning("Implementation page failed (%s): %r", type(exc).__name__, str(exc))
             report['errors'].append(str(exc))
             if isinstance(exc, RunStopped):
                 report['stop_reason'] = exc.reason
