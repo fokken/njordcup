@@ -43,17 +43,15 @@ def instructions(schema):
         return base + 'Describe the implementation, important functionality, languages, technology stack, dependencies, entry points and data/control flows. Do not perform a vulnerability audit.'
     if 'areas' in schema['properties']:
         return base + 'Describe the architecture, technology stack, dependencies, important features, trust boundaries and areas worth security review. Source is sampled; distinguish observed behavior from assumptions.'
-    return base + ('Analyze the single target file for potential security vulnerabilities. Systematically examine every '
-                   'supplied target chunk. Large files may be supplied in parts; state the reviewed line ranges '
-                   'and do not claim to have reviewed omitted parts. Use '
-                   'reference code as context. For each potential issue, use these Markdown headings: '
-                   'Title, Description, Impact, Remediation. In Description cite source paths and lines, '
-                   'explain the behavior, evidence, attack scenario, preconditions and uncertainty. In Impact '
-                   'explain the possible security consequences. In Remediation give concrete corrective steps. '
-                   'These headings are writing guidance, not a required machine-readable format. '
-                   'Assess scanner hypotheses when supplied, including '
-                   'counterevidence and uncertainty. Do not treat scanner claims as proof. If there are no supported '
-                   'issues, explain the reviewed scope and limitations. Do not invent omitted code.')
+    return base + ('Audit every supplied target chunk of the single file for security vulnerabilities; '
+                   'reference excerpts are context only. Cite reviewed line ranges and do not infer safety '
+                   'from omitted code. For each supported potential issue use Title, Description, Impact, '
+                   'Remediation. Include exact source evidence, attack preconditions, consequences, concrete '
+                   'fixes and uncertainty. Challenge scanner claims with counterevidence when present. '
+                   'Do not restate code, repeat issues or give generic security advice. If no supported issue '
+                   'is identified, give only a brief scope-and-limitations statement (one to three sentences). '
+                   'Never invent omitted code. Headings are guidance, not a required output format.')
+
 
 
 def overview(text, paths):

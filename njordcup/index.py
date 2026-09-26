@@ -255,6 +255,80 @@ class CodeIndex:
         return sorted((c for c in scores if c not in excluded),
                       key=lambda c: (-scores[c], self.chunks[c]["path"], self.chunks[c]["start"]))[:limit]
 
+    def reference_entry(self, chunk_id, target_ids, char_budget):
+        """Bound a reference excerpt around a relevant declaration or matching line."""
+        entry = self.entry(chunk_id)
+        if len(json.dumps(entry)) <= char_budget:
+            return entry
+        terms = {t.casefold() for target in target_ids for t in IDENTIFIERS.findall(self.text[target])}
+        chunk = self.chunks[chunk_id]
+        anchors = [s['start'] for s in self.data['files'][chunk['path']]['symbols']
+                   if s['name'].casefold() in terms and chunk['start'] <= s['start'] <= chunk['end']]
+        if not anchors:
+            def score(line):
+                return sum(1 / max(1, len(self.terms.get(t, ())))
+                           for t in {v.casefold() for v in IDENTIFIERS.findall(line)} & terms)
+            anchors = [max(range(chunk['start'], chunk['end'] + 1),
+                           key=lambda n: score(self.lines[chunk['path']][n - 1]))]
+        start = end = anchors[0]
+        def excerpt(first, last):
+            return {**entry, 'start': first, 'end': last, 'excerpt': True,
+                    'lines': '\n'.join(f"{n}: {self.lines[chunk['path']][n - 1]}" for n in range(first, last + 1))}
+        result = excerpt(start, end)
+        if len(json.dumps(result)) > char_budget:
+            return None
+        # Prefer following lines (function body), then leading context if space remains.
+        for direction in (1, -1):
+            while (direction == 1 and end < chunk['end']) or (direction == -1 and start > chunk['start']):
+                candidate = excerpt(start, end + 1) if direction == 1 else excerpt(start - 1, end)
+                if len(json.dumps(candidate)) > char_budget:
+                    break
+                result = candidate
+                start, end = result['start'], result['end']
+        return result
+
+    def reference_chunks(self, target_ids, limit=6):
+        """Rank nearby definitions/callers by identifiers in this batch, not file order."""
+        if limit <= 0:
+            return []
+        paths = {self.chunks[c]['path'] for c in target_ids}
+        related = set()
+        for path in paths:
+            related.update(self.data['dependencies'].get(path, []))
+            related.update(self.reverse.get(path, []))
+        related -= paths
+        scores = defaultdict(float)
+        # Inverted postings avoid scanning every related source chunk per request.
+        terms = set()
+        for chunk_id in target_ids:
+            terms.update(t.casefold() for t in IDENTIFIERS.findall(self.text[chunk_id]))
+        for term in terms:
+            matches = self.terms.get(term, ())
+            weight = 1 / max(1, len(matches))
+            for chunk_id in matches:
+                if self.chunks[chunk_id]['path'] in related:
+                    scores[chunk_id] += weight
+        # Prefer the declaration actually referenced by the target code.
+        for path in related:
+            for symbol in self.data['files'][path]['symbols']:
+                if symbol['name'].casefold() in terms:
+                    for chunk_id in self.by_path[path]:
+                        c = self.chunks[chunk_id]
+                        if c['start'] <= symbol['start'] <= c['end']:
+                            scores[chunk_id] += 10
+            # Keep a low-priority fallback for imports/manifests without shared names.
+            if self.by_path[path]:
+                scores[self.by_path[path][0]] += 0.001
+        chosen, per_path = [], defaultdict(int)
+        for chunk_id in sorted(scores, key=lambda c: (-scores[c], self.chunks[c]['path'], self.chunks[c]['start'])):
+            path = self.chunks[chunk_id]['path']
+            if per_path[path] < 2:
+                chosen.append(chunk_id)
+                per_path[path] += 1
+            if len(chosen) >= limit:
+                break
+        return chosen
+
     def related(self, paths, limit=15):
         candidates = set()
         for path in paths:

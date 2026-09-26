@@ -53,7 +53,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     report['analysis_format'] = 'narrative' if getattr(provider, 'output_mode', None) == 'prompt' else 'structured'
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 9,
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 10,
                                            "analysis_format": report['analysis_format'], "parser_profile": index.get("parser_profile"),
                                            "budgets": {k: getattr(provider, k, None) for k in
                                                        ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()
@@ -212,17 +212,33 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
             if getattr(provider, "control", None):
                 provider.control.check()
             if report['analysis_format'] == 'narrative':
-                # Free-form responses cannot carry machine-readable retrieval requests.
-                # Supply bounded related source proactively, in addition to scanner flows.
-                for related in lookup.related(paths):
-                    for chunk_id in lookup.by_path.get(related['path'], [])[:2]:
-                        entry = lookup.entry(chunk_id)
-                        cost = len(json.dumps(entry))
-                        if chunk_id not in loaded and cost <= remaining:
-                            payload['files'].append(entry)
-                            loaded.add(chunk_id)
-                            remaining -= cost
-                            dependencies[entry['path']] = index['files'][entry['path']]['hash']
+                # Target code and explicit SARIF flow evidence are unchanged. Optional
+                # references scale with the batch instead of filling a fixed allowance.
+                optional_budget = min(remaining, max(1024, sum(len(e['lines']) for e in payload['files']
+                                                             if e['id'] in payload['target_chunks']) // 2))
+                reference_count = 0
+                for chunk_id in lookup.reference_chunks(payload['target_chunks']):
+                    if chunk_id in loaded:
+                        continue
+                    entry = lookup.reference_entry(chunk_id, payload['target_chunks'], optional_budget)
+                    if entry is None:
+                        continue
+                    cost = len(json.dumps(entry))
+                    if cost <= optional_budget:
+                        payload['files'].append(entry)
+                        loaded.add(chunk_id)
+                        remaining -= cost
+                        optional_budget -= cost
+                        reference_count += 1
+                        dependencies[entry['path']] = index['files'][entry['path']]['hash']
+                payload.pop('related_files', None)
+                payload['context_note'] = 'Reference excerpts are selectively retrieved; omitted callers/dependencies are not evidence of safety.'
+                if overview:
+                    from .context import compact_memory
+                    payload['architectural_memory'] = compact_memory(overview, [e['path'] for e in payload['files']])
+                    log.debug('Architecture/history context: %d -> %d characters', len(json.dumps(overview)),
+                              len(json.dumps(payload['architectural_memory'])))
+                log.debug('Selected %d optional reference chunks for this file batch', reference_count)
             result = ask(instructions)
             if isinstance(result, Narrative):
                 if not result.complete:

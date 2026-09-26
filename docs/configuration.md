@@ -289,3 +289,35 @@ occur before logging to the file starts and are shown on stderr.
 `--synthesize` optionally generates a resumable prose executive summary with either
 HTML report command. It uses the same model and runtime budgets; see
 [report synthesis](reporting.md#optional-ai-executive-summary).
+
+## Faster narrative reviews
+
+The default prompt-mode security review sends compact architecture/history excerpts
+(maximum 3,000 serialized characters). Prior findings and narrative excerpts are
+filtered to the target and supplied reference files; implementation notes are selected
+by their recorded paths. Full analyses remain in memory and reports.
+
+Optional reference code is ranked by matching identifiers and declarations within
+related files, rather than selecting their first two chunks. At most six excerpts
+(two per related file) are considered. Their combined allowance is the smaller of
+remaining `--context-chars` and half the target's numbered text size, with a 1,024
+character floor before applying that remaining allowance. Large reference chunks
+are excerpted around matching declarations or lines, retaining original line numbers.
+This is heuristic retrieval, not proof that all relevant context was supplied.
+
+Target chunks are unchanged. Explicit SARIF flow locations are selected first under
+the existing context budget. The redundant related-file catalog is omitted from
+prompt-mode requests; structured modes retain their model-driven retrieval protocol.
+
+Security prompts request evidence-backed issues with Title, Description, Impact and
+Remediation, avoiding code restatements and generic advice. When no supported issue
+is identified, the model is asked for a one-to-three-sentence scope/limitations note.
+There is no forced short answer when evidence needs explanation, and raw responses
+remain accepted regardless of headings or length. Per-file consolidation still runs
+once all parts are complete and uses checkpoints as before.
+
+Use `--verbose` to see architecture/history character reductions, reference counts,
+request budget estimates, and provider-reported input/output tokens. Request timings
+remain available at normal verbosity. Reductions in prompt size do not establish an
+inference speedup or unchanged detection accuracy; measure these on your model/server.
+Use `--rerun` if you want already-completed areas regenerated with the new prompts.

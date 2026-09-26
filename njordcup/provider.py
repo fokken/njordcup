@@ -198,6 +198,8 @@ class OpenAIProvider:
             raise ReviewError("Provider returned invalid token counters")
         self.input_tokens += usage.get("prompt_tokens", 0)
         self.output_tokens += usage.get("completion_tokens", 0)
+        log.debug("Provider reported token usage: %d input / %d output",
+                  usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
         choices = result.get("choices") or []
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
             raise ReviewError("Provider returned no usable completion choice; check the endpoint's Chat Completions response format")

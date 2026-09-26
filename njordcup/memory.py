@@ -68,7 +68,8 @@ def review_context(memory, area_id=None):
                        "findings": [{k: f[k] for k in ("path", "line", "title", "cwe")}
                                     for f in report.get("findings", [])]}
             if report.get('narrative_analysis'):
-                summary['narrative_excerpts'] = [a['text'][:1500] for a in report['narrative_analysis'][:2]]
+                summary['narrative_excerpts'] = [{'paths': a.get('paths', []), 'text': a['text'][:1500]}
+                                                 for a in report['narrative_analysis'][:2]]
             cost = len(json.dumps(summary))
             if size + cost > 8000:
                 break

@@ -140,12 +140,12 @@ def review_implementation_context(report, paths, char_budget=12000):
         if page['status'] != 'complete' or not selected.intersection(page['paths']):
             continue
         analysis = page['analysis']
-        item = {'component': page['component'], 'summary': analysis['summary'][:1500],
+        item = {'component': page['component'], 'paths': sorted(selected.intersection(page['paths'])), 'summary': analysis['summary'][:1500],
                 'implementation_details': [s[:1000] for s in analysis['implementation_details'][:8]],
                 'data_flows': [s[:1000] for s in analysis['data_flows'][:5]],
                 'unknowns': [s[:500] for s in analysis['unknowns'][:5]]}
         if len(json.dumps({**context, 'pages': [*context['pages'], item]})) > char_budget:
-            item = {'component': page['component'], 'summary': analysis['summary'][:1000]}
+            item = {'component': page['component'], 'paths': sorted(selected.intersection(page['paths'])), 'summary': analysis['summary'][:1000]}
         if len(json.dumps({**context, 'pages': [*context['pages'], item]})) <= char_budget:
             context['pages'].append(item)
     return context

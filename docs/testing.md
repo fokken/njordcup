@@ -67,3 +67,7 @@ Java, C/C++, Unicode names, calls, dependency hints and full line coverage.
 Per-file review tests verify separate target requests, complete chunk coverage, empty
 files, retained original responses, consolidation resumption without repeated source
 review, and one escaped HTML entry per file.
+
+Context optimization tests cover relevant-history filtering, bounded excerpts around
+late-file definitions, unchanged target source/coverage, preserved SARIF flow context,
+and request-size reduction against the previous context-selection strategy.
