@@ -43,7 +43,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     units = [c for p in targets for c in index["files"][p]["chunks"]]
     if seeds:
         units = [c for c in units if any(s["path"] == c["path"] and c["start"] <= s["line"] <= c["end"] for s in seeds)]
-    units.sort(key=lambda c: (-len(c["signals"]), c["path"], c["start"]))
+    units.sort(key=lambda c: (c["path"], c["start"]))
     report = {"status": "incomplete", "findings": [], "reviewed": [], "unreviewed": [],
               "skipped": skipped, "limitations": [], "errors": [], "chunk_results": {},
               "read_dependencies": {}, "sarif_assessments": []}
@@ -53,7 +53,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     report['analysis_format'] = 'narrative' if getattr(provider, 'output_mode', None) == 'prompt' else 'structured'
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 8 if report["analysis_format"] == "narrative" else 7,
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 9,
                                            "analysis_format": report['analysis_format'], "parser_profile": index.get("parser_profile"),
                                            "budgets": {k: getattr(provider, k, None) for k in
                                                        ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()
@@ -65,6 +65,8 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
             if chunk and chunk["path"] in target_set and saved["hash"] == chunk["hash"] and (saved["status"] == "complete" or report['analysis_format'] == 'narrative'):
                 if all(index["files"].get(p, {}).get("hash") == h for p, h in saved.get("dependencies", {}).items()):
                     report["chunk_results"][chunk_id] = saved
+    from copy import deepcopy
+    report['file_consolidations'] = deepcopy(previous.get('file_consolidations', {})) if previous.get('review_signature') == signature else {}
     global_limits = []
 
     def finalize():
@@ -75,6 +77,10 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         report["findings"] = list({f["id"]: f for value in results.values() for f in value["findings"]}.values())
         report['narrative_analysis'] = list({a['id']: a for r in results.values() for a in r.get('narrative_analysis', [])}.values())
         report['requires_manual_review'] = bool(report['narrative_analysis'])
+        if report['analysis_format'] == 'narrative':
+            from .file_analysis import compile_files, apply_consolidations
+            report['file_analysis'] = compile_files(targets, units, results)
+            apply_consolidations(report['file_analysis'], report['file_consolidations'])
         report["limitations"] = list(dict.fromkeys(global_limits + [v for r in results.values() for v in r.get("limitations", [])]))
         report["budget_notes"] = list(dict.fromkeys(v for r in results.values() for v in r.get("budget_notes", [])))
         report["read_dependencies"] = {p: h for r in results.values() for p, h in r.get("dependencies", {}).items()}
@@ -103,6 +109,8 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
                               "lines_reviewed": sum(c["end"] - c["start"] + 1 for c in units if c["id"] in complete),
                               "symbols_total": symbol_total, "symbols_reviewed": symbol_done, "surface_signals": surfaces}
         report["status"] = "incomplete" if report["unreviewed"] or report["errors"] or report["limitations"] or any(a["status"] == "inconclusive" for a in report["sarif_assessments"]) else "complete"
+        if any(not f['complete'] for f in report.get('file_analysis', [])):
+            report['status'] = 'incomplete'
         report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
         report["request_budget"] = {k: getattr(provider, k, None) for k in
                                     ("context_window", "bytes_per_token", "token_margin", "max_tokens",
@@ -118,7 +126,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         if cost > batch_chars:
             global_limits.append(f"Single source line or chunk exceeds batch budget: {chunk['id']}")
             continue
-        if batch and size + cost > batch_chars:
+        if batch and (chunk["path"] != batch[0]["path"] or size + cost > batch_chars):
             batches.append(batch)
             batch, size = [], 0
         batch.append(chunk)
@@ -323,6 +331,21 @@ vulnerability at the same location. Scanner text and rule metadata remain untrus
                 report["stop_reason"] = exc.reason
             break
     finalize()
+    if report['analysis_format'] == 'narrative' and not report.get('stop_reason') and not report['errors']:
+        from .file_analysis import consolidation_input
+        from .synthesis import synthesize
+        for file in report['file_analysis']:
+            if not file['source_complete'] or len(file['parts']) <= 1:
+                continue
+            saved = report['file_consolidations'].setdefault(file['path'], {})
+            log.info("Consolidating %d responses for file %r", len(file['parts']), file['path'])
+            try:
+                synthesize(consolidation_input(file), saved, provider, finalize)
+            except RunStopped as exc:
+                report['stop_reason'] = exc.reason
+                report['errors'].append(str(exc))
+                break
+        finalize()
     return report
 
 

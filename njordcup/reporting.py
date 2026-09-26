@@ -83,12 +83,26 @@ def render_html(summary):
         scanner_html = '<section><h2>Scanner investigations</h2><p>' + e(', '.join(
             f'{count} {status}' for status, count in scanner['counts'].items())) + '</p>' + ''.join(dispositions) + '</section>'
     counts = summary['area_counts']
+    file_analyses = summary.get('file_analysis', [])
     metrics = ''.join(f'<div class="metric"><strong>{value}</strong><span>{label}</span></div>' for value, label in (
         (f"{counts['complete']} / {counts['total']}", 'Areas complete'),
         (counts['incomplete'], 'Areas incomplete'), (counts['unreviewed'], 'Areas unreviewed'),
-        (len(summary.get('narrative_analysis', [])), 'Saved security analyses')))
+        (len(file_analyses) if file_analyses else len(summary.get('narrative_analysis', [])),
+         'File analyses' if file_analyses else 'Saved security analyses')))
     issues_section = '<section><h2>Identified issues</h2>' + ''.join(cards) + '</section>' if cards else ''
     analysis_section = narrative_section('Security analysis', summary.get('narrative_analysis', []))
+    if file_analyses:
+        entries = ''.join(f'<article><h3>{e(a["path"])}</h3><p>Analysis status: {e(a["status"])} · '
+                          f'Review areas: {e(", ".join(map(str, a["area_ids"])))}</p>'
+                          f'<p>{e(a["note"])} Consolidation: {e(a.get("consolidation_status", "not_needed"))}.</p>'
+                          f'<pre>{e(a["text"]) if a["text"] else "No model response saved."}</pre>'
+                          + ('<details><summary>Original analysis parts</summary>' + ''.join(
+                              f'<h4>Lines {p["start"]}-{p["end"]}</h4><pre>{e(p["text"])}</pre>' for p in a['parts']) + '</details>'
+                             if len(a['parts']) > 1 else '') + '</article>'
+                          for a in file_analyses)
+        analysis_section = '<section><h2>Security analysis by file</h2><p>Large files are reviewed in bounded parts and consolidated into a file analysis. Original responses remain available below; pending consolidation displays the saved parts. Status records processing within the selected review scope.</p>' + entries + '</section>'
+        covered_areas = {i for a in file_analyses for i in a['area_ids']}
+        analysis_section += narrative_section('Earlier analyses', [a for a in summary.get('narrative_analysis', []) if a['area_id'] not in covered_areas])
     if not cards and not analysis_section:
         analysis_section = '<section><h2>Security analysis</h2><p>No security analysis text or issue details recorded. Consult review coverage and limitations below.</p></section>'
     now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')

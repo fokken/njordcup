@@ -63,3 +63,7 @@ Install `pip install -e ".[syntax]"` to include real Tree-sitter grammar tests i
 the normal unittest run. Without the extra, those tests are skipped; parser fallback
 and cache invalidation tests still run. Grammar tests cover JS, TS/TSX, Go, Rust,
 Java, C/C++, Unicode names, calls, dependency hints and full line coverage.
+
+Per-file review tests verify separate target requests, complete chunk coverage, empty
+files, retained original responses, consolidation resumption without repeated source
+review, and one escaped HTML entry per file.

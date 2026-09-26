@@ -94,10 +94,36 @@ python3 -m njordcup /path/to/repo --automatic --output-mode prompt \
 python3 -m njordcup /path/to/repo --report
 ```
 
-The report compiles all current saved batch analyses, including unfinished responses,
-with their source paths. Add `--synthesize` and model settings for an executive summary.
+The report groups current security analyses by source file, including unfinished
+responses. Files are never mixed in the same target batch. Add `--synthesize` and model settings for an executive summary.
 Coverage tracks processed chunks rather than a vulnerability count. Source exclusions,
 size limits and input/call budgets still apply; rerun incomplete audits to continue.
 Already completed areas are skipped; use `--rerun` to regenerate them with the new
 issue-writing instructions. Structured modes and their JSON counters remain available
 for existing integrations; the default output mode is unchanged.
+
+## One security analysis per file
+
+In prompt mode each file is reviewed separately. A file that fits the batch and context
+budgets gets one response. Larger files are split into bounded parts; after their source
+review completes, an additional model pass consolidates the responses into one coherent
+file analysis using Title, Description, Impact and Remediation. If the combined input is
+too large, consolidation uses bounded intermediate summaries. Original responses remain
+saved and appear under **Original analysis parts** in the HTML report.
+
+Consolidation preserves distinct issues, source references and uncertainty in its prompt,
+but model summarization can lose details; the originals remain the evidence to consult.
+No JSON or exact heading format is required. This automatic per-file consolidation is
+separate from the optional report-wide `--synthesize` executive summary.
+
+`file_analysis` records file status, individual parts and the resulting text in review
+memory and CLI output. `file_consolidations` stores resumable model checkpoints. Pending
+consolidation leaves the review incomplete, even if all code chunks were processed.
+On resume, completed source chunks are reused and only unfinished consolidation work is
+retried. Calls use the same endpoint, context/output budgets, retries and optional call
+or time limits as the audit. Empty files have an explicit note and need no model call.
+
+Completed old areas are still skipped by automatic mode. Use `--rerun` to regenerate
+existing reviews with per-file analysis. Earlier saved responses remain readable in reports.
+Implementation-analysis mode remains component-based. SARIF reviews still cover only
+reported regions, rather than implying full-file security coverage.

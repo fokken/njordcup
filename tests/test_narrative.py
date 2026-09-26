@@ -99,8 +99,8 @@ class NarrativeTests(unittest.TestCase):
             self.assertNotIn('Structured findings', security_html)
             self.assertNotIn('<th>Issues</th>', security_html)
             self.assertNotIn('No structured findings', security_html)
-            self.assertIn('Saved security analyses', security_html)
-            self.assertIn('Source files: app.py', security_html)
+            self.assertIn('File analyses', security_html)
+            self.assertIn('<h3>app.py</h3>', security_html)
             for path in ('memory.report.html', 'memory.implementation.html'):
                 html = (root / '.njordcup' / path).read_text()
                 self.assertIn(escape(TEXT, quote=True), html)
@@ -114,6 +114,8 @@ class NarrativeTests(unittest.TestCase):
         def respond(request, *args):
             body = json.loads(request.data)
             payload = json.loads(body['messages'][1]['content'])
+            if 'saved_analysis_fragments' in payload:
+                return envelope('Consolidated file analysis')
             transmitted.extend(payload['target_chunks'])
             for heading in ('Title', 'Description', 'Impact', 'Remediation'):
                 self.assertIn(heading, body['messages'][0]['content'])
@@ -126,6 +128,97 @@ class NarrativeTests(unittest.TestCase):
         self.assertEqual(result['coverage']['chunks_reviewed'], result['coverage']['chunks_total'])
         self.assertGreater(len(result['narrative_analysis']), 1)
         self.assertEqual({path for a in result['narrative_analysis'] for path in a['paths']}, set(sources))
+
+    def test_each_file_has_separate_request_and_one_saved_analysis(self):
+        sources = {'a.txt': 'first()', 'b.txt': 'second()', 'empty.txt': ''}
+        p = provider()
+        seen = []
+        def respond(request, *args):
+            payload = json.loads(json.loads(request.data)['messages'][1]['content'])
+            self.assertEqual(len(payload['target_paths']), 1)
+            seen.extend(payload['target_paths'])
+            return envelope('File analysis: ' + payload['target_paths'][0])
+        with patch.object(p, '_request', side_effect=respond):
+            result = review(sources, list(sources), [], p)
+        self.assertEqual(seen, ['a.txt', 'b.txt'])
+        self.assertEqual(len(result['file_analysis']), 3)
+        self.assertTrue(all(a['complete'] for a in result['file_analysis']))
+        self.assertEqual(result['file_analysis'][0]['text'], 'File analysis: a.txt')
+        self.assertIn('Empty file', result['file_analysis'][2]['note'])
+        with patch.object(p, '_request') as request:
+            resumed = review(sources, list(sources), [], p, previous=result)
+        request.assert_not_called()
+        self.assertEqual(resumed['file_analysis'], result['file_analysis'])
+
+    def test_partial_large_file_analysis_resumes_without_losing_parts(self):
+        sources = {'large.txt': 'process(input)\n' * 200}
+        p = provider()
+        count = 0
+        def respond(request, *args):
+            nonlocal count
+            count += 1
+            if count == 2:
+                raise ReviewError('temporary failure')
+            return envelope('Response ' + str(count))
+        with patch.object(p, '_request', side_effect=respond):
+            first = review(sources, list(sources), [], p, batch_chars=1400)
+        self.assertEqual(len(first['file_analysis']), 1)
+        file = first['file_analysis'][0]
+        self.assertFalse(file['complete'])
+        self.assertIn('Response 1', file['text'])
+        saved_parts = len(file['parts'])
+        with patch.object(p, '_request', return_value=envelope('Resumed response')) as request:
+            result = review(sources, list(sources), [], p, batch_chars=1400, previous=first)
+        file = result['file_analysis'][0]
+        self.assertTrue(file['complete'])
+        self.assertIn('Response 1', '\n'.join(p['text'] for p in file['parts']))
+        self.assertEqual(file['text'], 'Resumed response')
+        self.assertEqual(file['consolidation_status'], 'complete')
+        self.assertEqual(len(file['parts']), saved_parts + request.call_count - 1)
+        self.assertEqual([p['start'] for p in file['parts']], sorted(p['start'] for p in file['parts']))
+        self.assertEqual(file['chunks_total'], file['chunks_reviewed'])
+
+    def test_consolidation_failure_resumes_without_reviewing_code_again(self):
+        from njordcup.errors import RunStopped
+        from njordcup.file_analysis import merge_files
+        from njordcup.memory import summarize
+        from njordcup.reporting import render_html
+        sources = {'large.txt': 'process(input)\n' * 200}
+        p = provider()
+        def respond(request, *args):
+            payload = json.loads(json.loads(request.data)['messages'][1]['content'])
+            if 'saved_analysis_fragments' in payload:
+                raise RunStopped('call_budget', 'budget exhausted during consolidation')
+            return envelope('Potential issue <script>bad()</script>')
+        checkpoints = []
+        with patch.object(p, '_request', side_effect=respond):
+            first = review(sources, list(sources), [], p, batch_chars=1400,
+                           checkpoint=lambda r: checkpoints.append(deepcopy(r)))
+        self.assertEqual(first['status'], 'incomplete')
+        self.assertEqual(first['stop_reason'], 'call_budget')
+        self.assertEqual(first['coverage']['chunks_reviewed'], first['coverage']['chunks_total'])
+        self.assertTrue(first['file_analysis'][0]['source_complete'])
+        self.assertTrue(checkpoints[-1]['file_consolidations'])
+        with patch.object(p, '_request', return_value=envelope('Title: Combined issue')) as request:
+            result = review(sources, list(sources), [], p, batch_chars=1400, previous=first)
+        request.assert_called_once()
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['file_analysis'][0]['text'], 'Title: Combined issue')
+        with patch.object(p, '_request') as request:
+            resumed = review(sources, list(sources), [], p, batch_chars=1400, previous=result)
+        request.assert_not_called()
+        self.assertEqual(resumed['file_analysis'], result['file_analysis'])
+        merged = merge_files([(1, result), (2, result)])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]['text'], 'Title: Combined issue')
+        memory = {'overview': {'summary': 'Snapshot', 'tech_stack': [], 'areas': [{'title': 'Files'}]},
+                  'fingerprint': 'snapshot', 'reviews': [{'area_id': 1, 'saved_at': 'now', 'report': result}]}
+        html = render_html(summarize(memory))
+        self.assertEqual(html.count('<h3>large.txt</h3>'), 1)
+        self.assertIn('Title: Combined issue', html)
+        self.assertIn('Original analysis parts', html)
+        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('<script>', html)
 
     def test_automatic_has_no_default_twenty_call_cap(self):
         with tempfile.TemporaryDirectory() as tmp, patch('urllib.request.build_opener') as opener:

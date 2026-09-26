@@ -38,13 +38,14 @@ def synthesize(report, saved, provider, checkpoint):
     if state['status'] == 'complete':
         log.info('Reusing saved report synthesis')
         return state
+    schema = {'type': 'object', 'properties': {'file_synthesis': {'type': 'string'}}} if report.get('kind') == 'file_security_analysis' else SCHEMA
     kind = 'implementation' if report.get('kind') == 'implementation_analysis' else 'security'
 
     def payload(parts, stage):
         return {'report_kind': kind, 'stage': stage, 'saved_analysis_fragments': parts}
 
     def fits(parts, stage):
-        return provider.fits('', payload(parts, stage), SCHEMA)
+        return provider.fits('', payload(parts, stage), schema)
 
     def ask(parts, stage):
         provider.control.check()
@@ -54,7 +55,7 @@ def synthesize(report, saved, provider, checkpoint):
             return previous['text']
         log.info('Synthesizing report: %s (%d completed responses)', stage,
                  sum(n['complete'] for n in state['nodes'].values()))
-        response = provider.ask('', payload(parts, stage), SCHEMA)
+        response = provider.ask('', payload(parts, stage), schema)
         if not isinstance(response, Narrative):
             raise ReviewError('Report synthesis requires a prose response')
         state['nodes'][key] = response.record()

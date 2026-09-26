@@ -393,6 +393,8 @@ def run(argv, control, attach_log=None):
                     ids = queue_ids if args.automatic or args.investigate_all else [r['selected_area']['id'] for r in session_reviews]
                     report['narrative_analysis'] = [dict(area_id=i, **a) for i in ids
                                                     for a in latest_analysis.get(i, {}).get('narrative_analysis', [])]
+                    from .file_analysis import merge_files
+                    report['file_analysis'] = merge_files((i, latest_analysis.get(i, {})) for i in ids)
                     report['analysis_format'] = 'narrative'
                     report['requires_manual_review'] = bool(report['narrative_analysis'])
                 stopped = next((r["stop_reason"] for r in session_reviews if r.get("stop_reason")), None)

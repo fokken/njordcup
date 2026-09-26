@@ -101,6 +101,8 @@ def summarize(memory):
              for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
     from .sarif import scan_summary
     scanner = scan_summary(memory)
+    from .file_analysis import merge_files
+    file_analysis = merge_files((i, a["report"]) for i, a in latest.items())
     return {"status": "summary", "audit_status": "complete" if progress and counts["complete"] == len(progress) and not memory.get("coverage", {}).get("pages_pending") and not (scanner and scanner["counts"]["inconclusive"]) else "in_progress",
             "summary": memory["overview"]["summary"], "tech_stack": memory["overview"]["tech_stack"],
             "snapshot_fingerprint": memory["fingerprint"],
@@ -110,6 +112,7 @@ def summarize(memory):
             "findings": list(findings.values()), "findings_by_severity": severity,
             "narrative_analysis": [{"area_id": i, **a} for i, attempt in latest.items()
                                    for a in attempt['report'].get('narrative_analysis', [])],
+            "file_analysis": file_analysis,
             "architectural_analysis": memory.get('narrative_analysis', []),
             "requires_manual_review": any(a['report'].get('narrative_analysis') for a in latest.values()),
             "limitations": limitations, "errors": errors, "flyover_coverage": memory.get("coverage", {}),

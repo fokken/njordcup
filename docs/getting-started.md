@@ -93,3 +93,6 @@ or prove that it found every security issue.
 The main CLI runs without an API call cap by default (`--max-calls 0`).
 For an optional budget use `--max-calls N` or `--max-seconds N`; otherwise
 automatic mode continues through its pending queue, subject to errors or cancellation.
+
+Prompt-mode security reviews produce one analysis per file. Large files use bounded
+parts followed by resumable model consolidation; see [per-file reporting](reporting.md#one-security-analysis-per-file).
