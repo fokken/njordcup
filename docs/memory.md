@@ -21,15 +21,25 @@ Signal handlers do not interrupt a memory write halfway through.
 Retries are included in saved per-attempt usage. SARIF decisions are versioned against
 the evidence policy; a stronger policy requires older decisions to be re-adjudicated.
 
-For component-mapped audits, edits invalidate affected components and reverse
-import/call dependents. Unaffected review attempts and component summaries carry
-forward to the new snapshot. Read-context hashes invalidate additional affected
-reviews. Root/ancestor manifests participate in dependency edges. Dynamic dispatch,
+For component-mapped audits, edits invalidate changed files and reverse import/call
+dependents. Unaffected areas carry forward as before. Within an affected area,
+unchanged file checkpoints and consolidation results are retained in `resume_reviews`;
+the next review reconstructs current results and processes only the pending code.
+Until that review runs, the area is unreviewed in the active summary; stale aggregate
+findings and coverage are not copied from the old snapshot. Reference-source hashes
+invalidate additional checkpoints. Root/ancestor manifests participate in dependency edges. Dynamic dispatch,
 reflection and unresolved cross-language links can evade inferred dependencies;
 use `--refresh-memory` for a conservative full reset. Small legacy flyovers reset
 as a whole. SARIF scans are archived on source changes and must be reimported.
 Changing `--index-mode` invalidates the old map and review checkpoints. Run a new
 flyover with the new mode before selecting an area.
+
+Reuse also requires matching review settings and parser profile. Added files are
+reviewed normally, removed files disappear from current results, and `--rerun`
+discards checkpoints for the selected reviews. Older snapshots without a saved
+parser profile may require a one-time full re-review. Changes to architectural
+prose alone do not invalidate otherwise matching source checkpoints. Use
+`--refresh-memory` when a broad change warrants reviewing everything again.
 
 Prior snapshots move into `archives`. The menu and summary use the latest attempt
 for each current area; bounded prior-review summaries are supplied as context.

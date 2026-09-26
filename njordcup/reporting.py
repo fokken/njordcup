@@ -47,6 +47,26 @@ def synthesis_section(report):
             'not an additional source review. Original analyses and coverage remain below.</p>' + text + '</section>')
 
 
+def performance_section(summary):
+    rows = []
+    for area in summary.get('areas', []):
+        stats = summary.get('area_performance', {}).get(str(area['id']), {})
+        if not stats:
+            continue
+        phases = stats.get('phases', {})
+        reuse = summary.get('area_reuse', {}).get(str(area['id']), {})
+        rows.append(f"<tr><td>{e(area['title'])}</td><td>{stats.get('elapsed_seconds', 0):.1f}s</td>"
+                    f"<td>{phases.get('review', {}).get('elapsed_seconds', 0):.1f}s</td>"
+                    f"<td>{phases.get('file_consolidation', {}).get('elapsed_seconds', 0):.1f}s</td>"
+                    f"<td>{e(reuse.get('file_count', 0))}</td></tr>")
+    if not rows:
+        return ''
+    return ('<section><h2>Review execution</h2><p>Latest saved attempt per area. Timings include request overhead; '
+            'reused files require no repeated source review. Earlier attempts are not included.</p>'
+            '<div class="table-wrap"><table><thead><tr><th>Area</th><th>Elapsed</th><th>Model review</th>'
+            '<th>File consolidation</th><th>Files reused</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div></section>')
+
+
 def render_html(summary):
     severity_order = {name: i for i, name in enumerate(('critical', 'high', 'medium', 'low'))}
     findings = sorted(summary['findings'], key=lambda f: (severity_order.get(f['severity'], 4), f['path'], f['line']))
@@ -117,6 +137,7 @@ Last saved review: {e(summary.get('last_review_at') or 'No focused reviews yet')
 {narrative_section('Architectural analysis', summary.get('architectural_analysis', []))}
 <section><h2>Review coverage</h2><p>Reviewed / total within each area. Areas can overlap; these counts must not be added into a repository-wide percentage. SARIF reviews cover reported chunks.</p>
 <div class="table-wrap"><table><thead><tr><th>Area</th><th>Status</th><th>Lines</th><th>Chunks</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>
+{performance_section(summary)}
 {scanner_html}<section><h2>Limitations and outstanding questions</h2><ul>{gaps_html}</ul></section>
 <footer><p>Technology stack: {e(', '.join(summary['tech_stack']) or 'Not mapped')}<br>
 Snapshot: {e(summary['snapshot_fingerprint'])}<br>{e(summary['snapshot_note'])}</p></footer>

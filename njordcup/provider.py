@@ -89,6 +89,9 @@ class OpenAIProvider:
         self.cache = Path(cache) if cache else None
         self.calls = self.cache_hits = self.input_tokens = self.output_tokens = 0
         self.retries = 0
+        self.http_seconds = 0.0
+        self.responses_with_usage = self.responses_without_usage = 0
+        self.performance = {}
         if request_timeout <= 0 or max_retries < 0 or retry_base <= 0 or retry_max_delay <= 0:
             raise ValueError("Timeouts/delays must be positive and retries nonnegative")
         self.request_timeout, self.max_retries = request_timeout, max_retries
@@ -155,6 +158,31 @@ class OpenAIProvider:
             log.debug("Request budget adjusted: %d reductions", self.budget_adjustments - before)
 
     def ask(self, instructions, payload, schema):
+        from .performance import COUNTERS
+        properties = schema.get('properties', {})
+        phase = ('file_consolidation' if 'file_synthesis' in properties else
+                 'report_synthesis' if 'report_synthesis' in properties else
+                 'implementation' if 'languages' in properties else
+                 'flyover' if 'areas' in properties else 'review')
+        names = {'attempts': 'calls', 'cache_hits': 'cache_hits', 'retries': 'retries',
+                 'input_tokens': 'input_tokens', 'output_tokens': 'output_tokens', 'http_seconds': 'http_seconds',
+                 'responses_with_usage': 'responses_with_usage', 'responses_without_usage': 'responses_without_usage'}
+        before = {k: getattr(self, attr) for k, attr in names.items()}
+        started, failed = time.monotonic(), False
+        try:
+            return self._ask(instructions, payload, schema)
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            row = self.performance.setdefault(phase, {k: 0 for k in COUNTERS})
+            row['requests'] += 1
+            row['failures'] += int(failed)
+            row['elapsed_seconds'] += time.monotonic() - started
+            for key, attr in names.items():
+                row[key] += getattr(self, attr) - before[key]
+
+    def _ask(self, instructions, payload, schema):
         self.control.check()
         self.fit_payload(instructions, payload, schema)
         body = self.request_body(instructions, payload, schema)
@@ -196,6 +224,10 @@ class OpenAIProvider:
             raise ReviewError("Provider returned invalid usage metadata")
         if any(type(usage.get(k, 0)) is not int or usage.get(k, 0) < 0 for k in ("prompt_tokens", "completion_tokens")):
             raise ReviewError("Provider returned invalid token counters")
+        if "prompt_tokens" in usage and "completion_tokens" in usage:
+            self.responses_with_usage += 1
+        else:
+            self.responses_without_usage += 1
         self.input_tokens += usage.get("prompt_tokens", 0)
         self.output_tokens += usage.get("completion_tokens", 0)
         log.debug("Provider reported token usage: %d input / %d output",
@@ -318,6 +350,8 @@ class OpenAIProvider:
             except RunStopped as exc:
                 self.trace_event('stopped', request_id=request_id, reason=exc.reason)
                 raise
+            finally:
+                self.http_seconds += time.monotonic() - started
             self.control.check()
             if attempt == self.max_retries:
                 raise RunStopped("retry_exhausted", failure + "; retry limit exhausted")

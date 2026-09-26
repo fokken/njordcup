@@ -321,3 +321,24 @@ request budget estimates, and provider-reported input/output tokens. Request tim
 remain available at normal verbosity. Reductions in prompt size do not establish an
 inference speedup or unchanged detection accuracy; measure these on your model/server.
 Use `--rerun` if you want already-completed areas regenerated with the new prompts.
+
+## Timing and throughput
+
+Normal runtime logs finish with per-phase performance summaries: flyover, security
+review, file consolidation, implementation description, and report synthesis,
+when those phases ran. Each shows elapsed time, API attempts, cache hits, average
+HTTP-attempt duration, server-reported input/output tokens and end-to-end output
+tokens per second. `--log-file` captures these summaries; `--quiet` suppresses them.
+
+The final analysis JSON includes `performance.phases` and overall invocation elapsed
+time. Review checkpoints also save performance for that review invocation and a
+`reuse` record listing completed files and chunks reused. The offline audit summary
+exposes `area_performance` and `area_reuse`; HTML shows latest-attempt review and
+consolidation times and reused-file counts.
+
+Phase time includes request preparation, network time, input processing and retry
+backoff. HTTP-attempt time excludes backoff. Neither metric measures raw decoding
+speed. Missing token usage is recorded as `responses_without_usage`; throughput is
+null when no complete usage metadata is available. Mixed reporting gives only a
+partial token total. Cache hits do not add API attempts or token usage. These
+measurements are controller observations, not GPU utilization or hardware benchmarks.

@@ -23,6 +23,8 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
     compatible = old.get("version") == 2 and old.get("provider") == provider_identity(provider) and not refresh and mode_matches
     old_index = old.get("index_snapshot", {})
     affected = affected_files(old_index, index) if compatible else set(sources)
+    if compatible and old_index.get("parser_profile") != index.get("parser_profile"):
+        affected = set(sources)
     old_areas = {a["component"]: (i, a) for i, a in enumerate(old.get("overview", {}).get("areas", []), 1) if "component" in a}
     target_set = set(targets)
     areas, component_to_id = [], {}
@@ -34,11 +36,26 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
         areas.append({"component": component, "title": component if component != "." else "Repository root",
                       "reason": "Component mapped locally; architectural analysis pending.",
                       "features": [], "attack_surfaces": [], "paths": selected})
-    carried = []
+    carried, resume_reviews = [], {}
     if compatible:
         for component, (old_id, area) in old_areas.items():
             new_id = component_to_id.get(component)
-            if new_id is None or area["paths"] != areas[new_id - 1]["paths"] or affected.intersection(index["components"][component]):
+            if new_id is None:
+                continue
+            latest = next((a['report'] for a in reversed(old.get('reviews', [])) if a['area_id'] == old_id), None)
+            needs_review = (area['paths'] != areas[new_id - 1]['paths'] or
+                            bool(affected.intersection(index['components'][component])) or
+                            bool(latest and any(index['files'].get(p, {}).get('hash') != h
+                                                for p, h in latest.get('read_dependencies', {}).items())))
+            if latest is None and str(old_id) in old.get('resume_reviews', {}):
+                latest = old['resume_reviews'][str(old_id)]
+                needs_review = True
+            if latest and needs_review:
+                from .incremental import reusable_checkpoint
+                checkpoint = reusable_checkpoint(latest, areas[new_id - 1]['paths'], index, affected)
+                if checkpoint:
+                    resume_reviews[str(new_id)] = checkpoint
+            if needs_review:
                 continue
             for attempt in old.get("reviews", []):
                 if attempt["area_id"] != old_id:
@@ -50,15 +67,19 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
                 saved["area_id"] = new_id
                 saved["report"]["selected_area"] = {"id": new_id, **areas[new_id - 1]}
                 carried.append(saved)
+    if resume_reviews:
+        log.info('Incremental checkpoints retained for %d files across %d areas',
+                 len({r['path'] for checkpoint in resume_reviews.values() for r in checkpoint['chunk_results'].values()}),
+                 len(resume_reviews))
     changed = old.get("fingerprint") != fingerprint(sources, targets) or not compatible
     archives = list(old.get("archives", []))
     if old and changed:
         archives.append({k: v for k, v in old.items() if k != "archives"})
-    snapshot = {"files": {p: {"hash": f["hash"]} for p, f in index["files"].items()}, "dependencies": index["dependencies"]}
+    snapshot = {"parser_profile": index.get("parser_profile"), "files": {p: {"hash": f["hash"]} for p, f in index["files"].items()}, "dependencies": index["dependencies"]}
     memory = {"version": 2, "index_mode": index.get("index_mode", "auto"), "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
               "overview": {"summary": f"{len(sources)} eligible files in {len(areas)} review components.",
                            "tech_stack": [], "dependencies": [], "areas": areas, "unknowns": []},
-              "index_snapshot": snapshot, "index_stats": index["stats"], "reviews": carried,
+              "index_snapshot": snapshot, "index_stats": index["stats"], "reviews": carried, "resume_reviews": resume_reviews,
               "archives": archives, "component_pages": {}, "coverage": {}, "mapping_errors": []}
     if compatible and not changed and old.get("sarif_scans"):
         areas.extend(deepcopy([a for a in old["overview"]["areas"] if "scan_id" in a]))

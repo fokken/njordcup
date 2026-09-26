@@ -1,5 +1,6 @@
 import hashlib
 import json
+import time
 
 from .provider import ReviewError, validate
 from .errors import RunStopped, ContextBudgetExceeded
@@ -36,6 +37,9 @@ An empty findings list is valid. Limit findings to the 10 strongest issues per b
 
 def review(sources, targets, skipped, provider, batch_chars=24000, context_chars=24000, overview=None,
            repository_index=None, context_rounds=3, previous=None, checkpoint=None, seeds=None, code_lookup=None):
+    from .performance import snapshot, summarize as performance_summary
+    started = time.monotonic()
+    performance_before = snapshot(provider)
     from .index import CodeIndex, build_index
     index = repository_index or build_index(sources, targets, chunk_chars=max(32, batch_chars // 2))
     lookup = code_lookup or CodeIndex(index, sources)
@@ -67,6 +71,11 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
                     report["chunk_results"][chunk_id] = saved
     from copy import deepcopy
     report['file_consolidations'] = deepcopy(previous.get('file_consolidations', {})) if previous.get('review_signature') == signature else {}
+    reused_chunks = {key for key, value in report['chunk_results'].items() if value['status'] == 'complete'}
+    reused_files = [p for p in targets if index['files'][p]['chunks'] and
+                    all(c['id'] in reused_chunks for c in units if c['path'] == p)]
+    report['reuse'] = {'chunks': len(reused_chunks), 'files': reused_files, 'file_count': len(reused_files)}
+    log.info('Reusing %d completed files and %d source chunks', len(reused_files), len(reused_chunks))
     global_limits = []
 
     def finalize():
@@ -115,6 +124,8 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         report["request_budget"] = {k: getattr(provider, k, None) for k in
                                     ("context_window", "bytes_per_token", "token_margin", "max_tokens",
                                      "max_input_chars", "max_estimated_input_tokens", "budget_adjustments")}
+        report['performance'] = performance_summary(snapshot(provider), performance_before)
+        report['performance']['elapsed_seconds'] = time.monotonic() - started
         if checkpoint:
             checkpoint(report)
 

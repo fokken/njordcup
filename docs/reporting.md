@@ -127,3 +127,9 @@ Completed old areas are still skipped by automatic mode. Use `--rerun` to regene
 existing reviews with per-file analysis. Earlier saved responses remain readable in reports.
 Implementation-analysis mode remains component-based. SARIF reviews still cover only
 reported regions, rather than implying full-file security coverage.
+
+The **Review execution** table shows elapsed, model-review and file-consolidation
+time for each area's latest saved attempt, plus the number of files reused without
+repeating source review. Earlier attempts and the initial flyover are not included
+in this table; per-phase invocation totals are available in runtime logs and analysis
+JSON output.

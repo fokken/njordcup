@@ -121,5 +121,7 @@ def summarize(memory):
             "review_attempts": len(attempts), "last_review_at": attempts[-1]["saved_at"] if attempts else None,
             "review_usage_all_attempts": usage, "archived_snapshots": len(memory.get("archives", [])),
             "index_stats": memory.get("index_stats", {}),
+            "area_performance": {str(i): a["report"].get("performance", {}) for i, a in latest.items()},
+            "area_reuse": {str(i): a["report"].get("reuse", {}) for i, a in latest.items()},
             "area_coverage": {str(i): a["report"].get("coverage", {}) for i, a in latest.items()},
             "sarif": scanner}

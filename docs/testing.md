@@ -71,3 +71,8 @@ review, and one escaped HTML entry per file.
 Context optimization tests cover relevant-history filtering, bounded excerpts around
 late-file definitions, unchanged target source/coverage, preserved SARIF flow context,
 and request-size reduction against the previous context-selection strategy.
+
+Incremental tests verify file reuse within a changed component, persistence through
+a separate flyover, dependency/reference invalidation, added/removed scope and forced
+reruns. Performance tests cover retries, cache accounting, phase separation and missing
+token-usage metadata. These use mocked model responses, not live-model benchmarks.

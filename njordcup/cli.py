@@ -35,6 +35,9 @@ def main(argv=None):
     with logging_session() as attach_log, handle_signals(control):
         started = time.monotonic()
         result = run(argv, control, attach_log)
+        if hasattr(control, "performance_provider"):
+            from .performance import log_performance
+            log_performance(log, control.performance_provider)
         log.info("Execution finished in %.1fs (exit %d)", time.monotonic() - started, result)
         return result
 
@@ -106,6 +109,7 @@ def run(argv, control, attach_log=None):
     verbosity.add_argument("--quiet", action="store_true", help="Suppress progress logs; keep warnings, errors and finding notifications")
     parser.add_argument("--trace-file", type=Path, help="Opt-in full request/response JSONL trace (contains source and model output; no HTTP headers)")
     parser.add_argument("--log-file", type=Path, help="Append runtime logs and stderr notifications to a text file as well as the terminal")
+    invocation_started = time.monotonic()
     args = parser.parse_args(argv)
     logging.getLogger("njordcup").setLevel(logging.DEBUG if args.verbose else logging.WARNING if args.quiet else logging.INFO)
     if args.max_seconds:
@@ -135,7 +139,7 @@ def run(argv, control, attach_log=None):
         parser.error("--synthesize requires --model or REVIEW_MODEL")
 
     def make_provider(synthesis=False):
-        return OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
+        provider = OpenAIProvider(args.model, args.max_calls, args.cache, args.base_url,
                               args.api_key_env, "prompt" if synthesis else args.output_mode,
                               args.max_tokens, args.max_input_chars,
                               request_timeout=args.request_timeout, max_retries=args.max_retries,
@@ -143,6 +147,9 @@ def run(argv, control, attach_log=None):
                               bytes_per_token=args.bytes_per_token, token_margin=args.token_margin,
                               retry_base=args.retry_base, retry_max_delay=args.retry_max_delay, control=control,
                               on_retry=lambda event: log.warning("%s; retry %d in %.1fs", event["reason"], event["retry"], event["delay_seconds"]))
+
+        control.performance_provider = provider
+        return provider
 
     def attach_synthesis(report, saved, path):
         from .synthesis import saved_synthesis, synthesize
@@ -328,6 +335,8 @@ def run(argv, control, attach_log=None):
                     scoped = area["paths"] if area.get("sarif_candidates") else [p for p in targets if p in area["paths"]]
                     before = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
                     prior = next((a["report"] for a in reversed(memory.get("reviews", [])) if a["area_id"] == selected), None)
+                    if prior is None:
+                        prior = memory.get("resume_reviews", {}).get(str(selected))
                     if args.rerun or (prior and prior["status"] == "complete"):
                         prior = None
                     attempt_id = None
@@ -417,6 +426,10 @@ def run(argv, control, attach_log=None):
                 report["memory_path"] = str(memory_path)
                 report["memory_reused"] = reused
                 report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
+        if hasattr(control, "performance_provider"):
+            from .performance import snapshot, summarize as performance_summary
+            report["performance"] = performance_summary(snapshot(control.performance_provider))
+            report["performance"]["elapsed_seconds"] = time.monotonic() - invocation_started
         rendered = json.dumps(report, indent=2, ensure_ascii=True) + "\n"
         if args.output:
             args.output.write_text(rendered)
