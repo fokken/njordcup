@@ -6,7 +6,8 @@ APIs. No runtime Python dependencies are required.
 **Index → flyover → saved memory → focused investigations → audit summary.**
 
 njordcup maps repository components, reviews bounded code chunks, and saves
-progress between runs. It can also investigate individual Semgrep SARIF findings
+progress between runs. Free-form security analysis (`--output-mode prompt`) is the
+default; structured JSON modes remain available explicitly. It can also investigate individual Semgrep SARIF findings
 or the entire imported scan.
 
 Source discovery accepts eligible UTF-8 text in any language, including unknown

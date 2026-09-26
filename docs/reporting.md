@@ -100,7 +100,7 @@ Coverage tracks processed chunks rather than a vulnerability count. Source exclu
 size limits and input/call budgets still apply; rerun incomplete audits to continue.
 Already completed areas are skipped; use `--rerun` to regenerate them with the new
 issue-writing instructions. Structured modes and their JSON counters remain available
-for existing integrations; the default output mode is unchanged.
+for existing integrations; the CLI now defaults to `prompt`.
 
 ## One security analysis per file
 

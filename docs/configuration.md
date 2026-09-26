@@ -7,7 +7,7 @@
 | `--base-url` | `REVIEW_BASE_URL` | `https://api.openai.com/v1` |
 | `--model` | `REVIEW_MODEL` | Required for model operations |
 | `--api-key-env` | `REVIEW_API_KEY_ENV` | `OPENAI_API_KEY` |
-| `--output-mode` | `REVIEW_OUTPUT_MODE` | `json_schema` |
+| `--output-mode` | `REVIEW_OUTPUT_MODE` | `prompt` |
 
 `--api-key-env` names the variable containing the credential, not the credential
 itself. Local endpoints can run without a key. HTTP redirects are rejected. Only
@@ -21,11 +21,11 @@ All modes expect the server's normal JSON API envelope. They differ in how
 
 | Mode | Model content |
 | --- | --- |
-| `json_schema` (default) | Requests a strict server-side schema, then parses and validates the model's JSON locally |
+| `json_schema` | Requests a strict server-side schema, then parses and validates the model's JSON locally |
 | `json_object` | Requests JSON syntax from the server, then parses and validates the required schema locally |
-| `prompt` | Requests prose/Markdown and saves the model's text verbatim; no JSON parsing or schema validation of the content |
+| `prompt` (default) | Requests prose/Markdown and saves the model's text verbatim; no JSON parsing or schema validation of the content |
 
-Use `--output-mode prompt` when you want to accept the response as-is. Even JSON-looking
+The CLI defaults to `prompt`, accepting the response as-is. Even JSON-looking
 text, Markdown fences and reasoning text are preserved rather than interpreted.
 API envelope validation, request budgets, retries, caching and source snapshots still
 apply. The JSON saved by njordcup is its own storage format, not a format imposed on
@@ -42,14 +42,17 @@ issues from it. Full narrative text can therefore appear in runtime logs in this
 A completed prompt-mode review means its source batches received nonempty, finished
 responses; it does not imply that there were no issues. `findings` contains only
 structured findings, and `requires_manual_review` identifies narrative review output.
-Read `narrative_analysis` for the actual analysis. SARIF text is retained but automatic
+Read `file_analysis` for per-file results and `narrative_analysis` for original responses. SARIF text is retained but automatic
 scanner verdicts remain inconclusive; use a structured mode for machine-checked
 adjudications. Truncated or otherwise unfinished text is also saved, marked incomplete,
 and is not cached as a successful response.
 
 Changing modes changes provider identity; regenerate the flyover rather than selecting
 an area from incompatible saved memory. Use `--output-mode prompt` consistently for
-analysis and resumed reviews.
+analysis and resumed reviews. To continue an existing structured-mode audit, explicitly
+pass `--output-mode json_schema` (or its original mode), or set `REVIEW_OUTPUT_MODE`.
+The standalone evaluation harness and direct Python provider API retain their
+structured defaults for compatibility.
 
 Defaults: `--max-calls 0` (unlimited), `--max-tokens 6000`, `--batch-chars 24000`,
 `--context-chars 24000`, `--context-rounds 3`, `--max-input-chars 80000`.

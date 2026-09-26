@@ -2,6 +2,7 @@ from copy import deepcopy
 from html import escape
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -219,6 +220,26 @@ class NarrativeTests(unittest.TestCase):
         self.assertIn('Original analysis parts', html)
         self.assertIn('&lt;script&gt;', html)
         self.assertNotIn('<script>', html)
+
+    def test_cli_defaults_to_prompt_and_honors_output_mode_overrides(self):
+        from test_scale import AutomaticProvider
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {}, clear=True):
+            root = Path(tmp)
+            (root / 'app.txt').write_text('process(input)')
+            args = [tmp, '--model', 'local', '--base-url', 'http://localhost/v1']
+            with patch('urllib.request.build_opener') as opener, patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.stderr', new_callable=io.StringIO):
+                opener.return_value.open.side_effect = lambda *a, **k: io.BytesIO(json.dumps(envelope()).encode())
+                self.assertEqual(main([*args, '--automatic']), 0)
+                self.assertEqual(json.loads(out.getvalue())['file_analysis'][0]['text'], TEXT)
+                for call in opener.return_value.open.call_args_list:
+                    self.assertNotIn('response_format', json.loads(call.args[0].data))
+            for extra, environment, expected in [([], 'json_object', 'json_object'),
+                                                   (['--output-mode', 'json_schema'], 'prompt', 'json_schema')]:
+                with patch.dict(os.environ, {'REVIEW_OUTPUT_MODE': environment}), \
+                     patch('njordcup.cli.OpenAIProvider', return_value=AutomaticProvider()) as factory, \
+                     patch('sys.stdout', new_callable=io.StringIO), patch('sys.stderr', new_callable=io.StringIO):
+                    self.assertEqual(main([*args, '--flyover-only', '--refresh-memory', *extra]), 0)
+                self.assertEqual(factory.call_args.args[5], expected)
 
     def test_automatic_has_no_default_twenty_call_cap(self):
         with tempfile.TemporaryDirectory() as tmp, patch('urllib.request.build_opener') as opener:

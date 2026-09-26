@@ -64,7 +64,7 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--model", default=os.getenv("REVIEW_MODEL"))
     parser.add_argument("--base-url", default=os.getenv("REVIEW_BASE_URL", "https://api.openai.com/v1"))
     parser.add_argument("--api-key-env", default=os.getenv("REVIEW_API_KEY_ENV", "OPENAI_API_KEY"))
-    parser.add_argument("--output-mode", choices=["json_schema", "json_object", "prompt"], default=os.getenv("REVIEW_OUTPUT_MODE", "json_schema"))
+    parser.add_argument("--output-mode", choices=["json_schema", "json_object", "prompt"], default=os.getenv("REVIEW_OUTPUT_MODE", "prompt"), help="Model response format (default: prompt; accepts free-form text)")
     parser.add_argument("--max-calls", type=nonnegative, default=0, help="API attempt limit per invocation; 0 means unlimited (default)")
     parser.add_argument("--request-timeout", type=duration, default=120, help="Socket I/O timeout in seconds per attempt")
     parser.add_argument("--max-retries", type=nonnegative, default=2, help="Transient retries per call; each attempt counts toward --max-calls")
