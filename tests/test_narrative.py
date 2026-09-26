@@ -127,6 +127,23 @@ class NarrativeTests(unittest.TestCase):
         self.assertGreater(len(result['narrative_analysis']), 1)
         self.assertEqual({path for a in result['narrative_analysis'] for path in a['paths']}, set(sources))
 
+    def test_automatic_has_no_default_twenty_call_cap(self):
+        with tempfile.TemporaryDirectory() as tmp, patch('urllib.request.build_opener') as opener:
+            root = Path(tmp)
+            for i in range(24):
+                module = root / f'module{i}'
+                module.mkdir()
+                (module / 'app.txt').write_text('process(input)')
+            opener.return_value.open.side_effect = lambda *a, **k: io.BytesIO(json.dumps(envelope()).encode())
+            with patch('sys.stdout', new_callable=io.StringIO) as out, patch('sys.stderr', new_callable=io.StringIO):
+                result = main([tmp, '--automatic', '--model', 'local', '--base-url', 'http://localhost/v1',
+                               '--output-mode', 'prompt'])
+            self.assertEqual(result, 0)
+            self.assertGreater(opener.return_value.open.call_count, 20)
+            report = json.loads(out.getvalue())
+            self.assertEqual(report['status'], 'complete')
+            self.assertTrue(all(a['status'] == 'complete' for a in report['area_progress']))
+
     def test_partial_mapping_and_implementation_are_kept_on_disk(self):
         sources = {'app.py': 'safe()'}
         index = build_index(sources, list(sources))

@@ -51,12 +51,18 @@ Changing modes changes provider identity; regenerate the flyover rather than sel
 an area from incompatible saved memory. Use `--output-mode prompt` consistently for
 analysis and resumed reviews.
 
-Defaults: `--max-calls 20`, `--max-tokens 6000`, `--batch-chars 24000`,
+Defaults: `--max-calls 0` (unlimited), `--max-tokens 6000`, `--batch-chars 24000`,
 `--context-chars 24000`, `--context-rounds 3`, `--max-input-chars 80000`.
 The character cap includes messages and output-format schema. Optional metadata
 and flyover samples shrink to fit; review batches split when mandatory input is too
-large. Target source is never silently truncated. Large repositories need more
-calls or more resumptions, not a repository-sized context window.
+large. Target source is never silently truncated. Large repositories use more calls, not a repository-sized context window.
+
+The main CLI has no call cap by default, so automated analysis can finish its queue.
+Use `--max-calls N` for an optional positive limit; retries count toward it.
+Use `--max-calls 0` to explicitly disable the cap. Per-request retry limits,
+timeouts, cancellation and optional `--max-seconds` still apply. Unlimited calls
+does not retry failing requests indefinitely. The evaluation harness retains its
+separate default of 100 calls.
 
 ## Adaptive context budgeting
 

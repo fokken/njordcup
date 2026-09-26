@@ -59,7 +59,7 @@ class LoggingTests(unittest.TestCase):
                 provider.ask('private_prompt_marker', {'source': 'private_source_marker'}, SCHEMA)
                 provider.ask('private_prompt_marker', {'source': 'private_source_marker'}, SCHEMA)
             logs = err.getvalue()
-            for expected in ('Model request 1/20 started', 'received in', 'Request budget:', 'Using cached model response', '123 input / 45 output'):
+            for expected in ('Model request 1/unlimited started', 'received in', 'Request budget:', 'Using cached model response', '123 input / 45 output'):
                 self.assertIn(expected, logs)
             for private in ('credential_marker', 'private_model_marker', 'private_prompt_marker', 'private_source_marker', 'http://localhost'):
                 self.assertNotIn(private, logs)

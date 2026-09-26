@@ -65,7 +65,7 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--base-url", default=os.getenv("REVIEW_BASE_URL", "https://api.openai.com/v1"))
     parser.add_argument("--api-key-env", default=os.getenv("REVIEW_API_KEY_ENV", "OPENAI_API_KEY"))
     parser.add_argument("--output-mode", choices=["json_schema", "json_object", "prompt"], default=os.getenv("REVIEW_OUTPUT_MODE", "json_schema"))
-    parser.add_argument("--max-calls", type=positive, default=20)
+    parser.add_argument("--max-calls", type=nonnegative, default=0, help="API attempt limit per invocation; 0 means unlimited (default)")
     parser.add_argument("--request-timeout", type=duration, default=120, help="Socket I/O timeout in seconds per attempt")
     parser.add_argument("--max-retries", type=nonnegative, default=2, help="Transient retries per call; each attempt counts toward --max-calls")
     parser.add_argument("--retry-base", type=duration, default=1, help="Initial retry backoff in seconds")
@@ -372,7 +372,7 @@ def run(argv, control, attach_log=None):
                     for finding in ([] if args.automatic else report.get("findings", [])):
                         print(f"  {finding['severity']}: {finding['title']} ({finding['path']}:{finding['line']})", file=sys.stderr)
                     selected = None
-                    if getattr(provider, "calls", 0) >= args.max_calls:
+                    if args.max_calls and getattr(provider, "calls", 0) >= args.max_calls:
                         print("Session API call budget reached. Resume in a new invocation.", file=sys.stderr)
                         break
                 if not session_reviews:

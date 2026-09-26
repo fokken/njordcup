@@ -89,3 +89,7 @@ This mode performs broad source reviews; scanner adjudication is a separate acti
 using `--sarif ... --investigate-all`. Saved scanner investigations remain available
 in summaries and [HTML reports](reporting.md). Automatic mode does not execute code
 or prove that it found every security issue.
+
+The main CLI runs without an API call cap by default (`--max-calls 0`).
+For an optional budget use `--max-calls N` or `--max-seconds N`; otherwise
+automatic mode continues through its pending queue, subject to errors or cancellation.

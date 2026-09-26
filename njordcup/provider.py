@@ -71,10 +71,12 @@ def validate(value, schema, path="$"):
 
 
 class OpenAIProvider:
-    def __init__(self, model, max_calls=20, cache=None, base_url="https://api.openai.com/v1",
+    def __init__(self, model, max_calls=0, cache=None, base_url="https://api.openai.com/v1",
                  api_key_env="OPENAI_API_KEY", output_mode="json_schema", max_tokens=6000, max_input_chars=80000,
                  request_timeout=120, max_retries=2, retry_base=1, retry_max_delay=30, control=None, on_retry=None,
                  context_window=None, bytes_per_token=1, token_margin=1024, trace_file=None):
+        if type(max_calls) is not int or max_calls < 0:
+            raise ValueError("max_calls must be a nonnegative integer; 0 means unlimited")
         self.model, self.max_calls = model, max_calls
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -244,7 +246,7 @@ class OpenAIProvider:
     def _request(self, request):
         for attempt in range(self.max_retries + 1):
             self.control.check()
-            if self.calls >= self.max_calls:
+            if self.max_calls and self.calls >= self.max_calls:
                 raise RunStopped("call_budget", "API call budget exhausted (including retry attempts)")
             self.calls += 1
             if attempt:
@@ -255,7 +257,7 @@ class OpenAIProvider:
             if self.trace:
                 self.trace_event('request', request_id=request_id, call=self.calls, attempt=attempt + 1,
                                  body=json.loads(request.data))
-            log.info("Model request %d/%d started (attempt %d, I/O timeout %.1fs)", self.calls, self.max_calls, attempt + 1, self.request_timeout)
+            log.info("Model request %d/%s started (attempt %d, I/O timeout %.1fs)", self.calls, self.max_calls or "unlimited", attempt + 1, self.request_timeout)
             chunks = []
             try:
                 with urllib.request.build_opener(NoRedirect()).open(request, timeout=self.control.timeout(self.request_timeout)) as response:
@@ -317,7 +319,7 @@ class OpenAIProvider:
             self.control.check()
             if attempt == self.max_retries:
                 raise RunStopped("retry_exhausted", failure + "; retry limit exhausted")
-            if self.calls >= self.max_calls:
+            if self.max_calls and self.calls >= self.max_calls:
                 raise RunStopped("call_budget", "API call budget exhausted (including retry attempts)")
             delay = retry_delay(attempt, retry_after, self.retry_base, self.retry_max_delay)
             if self.on_retry:
