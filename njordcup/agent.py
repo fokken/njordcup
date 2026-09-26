@@ -54,7 +54,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
                                            "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 8 if report["analysis_format"] == "narrative" else 7,
-                                           "analysis_format": report['analysis_format'],
+                                           "analysis_format": report['analysis_format'], "parser_profile": index.get("parser_profile"),
                                            "budgets": {k: getattr(provider, k, None) for k in
                                                        ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()
     report["review_signature"] = signature
@@ -98,7 +98,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
                     item["chunks_reviewed"] += chunk["id"] in complete
         report["coverage"] = {"chunks_total": len(units), "chunks_reviewed": len(complete),
                               "indexing_methods": {method: sum(index["files"][p]["parser"] == method for p in targets)
-                                                   for method in ("python_ast", "lexical", "text")},
+                                                   for method in ("python_ast", "tree_sitter", "lexical", "text")},
                               "lines_total": sum(c["end"] - c["start"] + 1 for c in units),
                               "lines_reviewed": sum(c["end"] - c["start"] + 1 for c in units if c["id"] in complete),
                               "symbols_total": symbol_total, "symbols_reviewed": symbol_done, "surface_signals": surfaces}

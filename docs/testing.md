@@ -58,3 +58,8 @@ resumption, SARIF non-promotion, and both HTML report workflows.
 Report synthesis tests cover bounded map/reduce calls, interrupted resumption, unchanged
 input reuse, stale-summary suppression, free-form/truncated responses, escaped HTML,
 both CLI report modes and preservation of original analyses and HTML on cancellation.
+
+Install `pip install -e ".[syntax]"` to include real Tree-sitter grammar tests in
+the normal unittest run. Without the extra, those tests are skipped; parser fallback
+and cache invalidation tests still run. Grammar tests cover JS, TS/TSX, Go, Rust,
+Java, C/C++, Unicode names, calls, dependency hints and full line coverage.

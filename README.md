@@ -11,6 +11,8 @@ or the entire imported scan.
 
 Source discovery accepts eligible UTF-8 text in any language, including unknown
 extensions and extensionless files. Use `--index-mode text` for generic indexing.
+Install `pip install -e ".[syntax]"` for optional Tree-sitter function boundaries
+and call metadata in common languages ([details](docs/indexing.md)).
 
 ## Quick start
 

@@ -9,6 +9,18 @@ description = "Bounded, evidence-based AI security review for local repositories
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+syntax = [
+    "tree-sitter>=0.25,<0.26",
+    "tree-sitter-javascript>=0.23,<0.26",
+    "tree-sitter-typescript>=0.23,<0.24",
+    "tree-sitter-go>=0.23,<0.26",
+    "tree-sitter-rust>=0.23,<0.25",
+    "tree-sitter-java>=0.23,<0.24",
+    "tree-sitter-c>=0.23,<0.25",
+    "tree-sitter-cpp>=0.23,<0.24",
+]
+
 [project.scripts]
 njordcup = "njordcup.cli:main"
 

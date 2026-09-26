@@ -116,8 +116,8 @@ location resolution, so include relevant configuration and shared modules too.
 Globs match complete repository-relative paths using Python's `fnmatch`; `*` can
 match directory separators. Quote patterns so your shell does not expand them.
 
-`--index-mode auto` preserves optional Python AST parsing and best-effort lexical
-metadata for other files. `--index-mode text` uses general text chunks and identifier
+`--index-mode auto` uses Python AST parsing, optional Tree-sitter grammars, and
+best-effort lexical metadata for other files ([installation and behavior](indexing.md)). `--index-mode text` uses general text chunks and identifier
 search without language-specific symbol parsing. Switching modes rebuilds metadata
 and requires a new flyover before reusing an area selection.
 

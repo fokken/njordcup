@@ -1,4 +1,4 @@
-"""Local metadata index. Python AST parsing; explicit lexical fallback elsewhere."""
+"""Local metadata index. Python AST and optional Tree-sitter parsing with lexical/text fallback."""
 import ast
 from collections import defaultdict
 import hashlib
@@ -69,6 +69,17 @@ def parse_file(path, source, chunk_chars, index_mode="auto"):
                         calls.append(name)
         except (SyntaxError, RecursionError, ValueError):
             notes.append("Python parsing failed; using lexical metadata")
+    if parser == "lexical" and index_mode == "auto":
+        from .syntax import extract
+        syntax, note = extract(path, source)
+        if note:
+            notes.append(note)
+        if syntax is not None:
+            symbols, calls = syntax
+            parser = "tree_sitter"
+            notes.append("Syntax-derived symbols/calls; imports and dependency edges are heuristic, not a semantic call graph")
+    if parser in {"lexical", "tree_sitter"}:
+        imports = re.findall(r"(?:from\s+|require\s*\(|import\s*\(|import\s+|#include\s*)[\"'<]([^\"'>]+)", source)
     if parser == "lexical":
         notes.append("Symbols/imports/calls are heuristic; no semantic call graph")
         definition = re.compile(r"(?:\b(?:function|func|fn|def|class|interface)\s+(?:\([^)]*\)\s*)?)([A-Za-z_]\w*)")
@@ -76,7 +87,6 @@ def parse_file(path, source, chunk_chars, index_mode="auto"):
             match = definition.search(line)
             if match:
                 symbols.append({"name": match.group(1), "start": i, "end": i, "kind": "declaration"})
-        imports = re.findall(r"(?:from\s+|require\s*\(|import\s*\(|import\s+|#include\s*)[\"'<]([^\"'>]+)", source)
         calls = re.findall(r"\b([A-Za-z_]\w*)\s*\(", source)
     if parser == "text":
         notes.append("Text-only indexing: symbol and call/import resolution unavailable")
@@ -104,7 +114,9 @@ def build_index(sources, targets, previous=None, chunk_chars=10000, index_mode="
     if index_mode not in {"auto", "text"}:
         raise ValueError("index_mode must be auto or text")
     previous = previous or {}
-    reusable = previous.get("files", {}) if previous.get("version") == 2 and previous.get("chunk_chars") == chunk_chars and previous.get("index_mode") == index_mode else {}
+    from .syntax import profile
+    parser_profile = profile() if index_mode == "auto" else None
+    reusable = previous.get("files", {}) if previous.get("version") == 2 and previous.get("chunk_chars") == chunk_chars and previous.get("index_mode") == index_mode and previous.get("parser_profile") == parser_profile else {}
     files, reused = {}, 0
     manifest_dirs = {str(PurePosixPath(p).parent) for p in sources if PurePosixPath(p).name in MANIFESTS}
     components = defaultdict(list)
@@ -160,8 +172,8 @@ def build_index(sources, targets, previous=None, chunk_chars=10000, index_mode="
                 if candidate in files:
                     resolved.add(candidate)
         dependencies[path] = sorted(resolved - {path})
-    methods = {method: sum(f["parser"] == method for f in files.values()) for method in ("python_ast", "lexical", "text")}
-    return {"version": 2, "index_mode": index_mode, "chunk_chars": chunk_chars, "files": files,
+    methods = {method: sum(f["parser"] == method for f in files.values()) for method in ("python_ast", "tree_sitter", "lexical", "text")}
+    return {"version": 2, "parser_profile": parser_profile, "index_mode": index_mode, "chunk_chars": chunk_chars, "files": files,
             "components": dict(components), "dependencies": dependencies, "targets": sorted(targets),
             "stats": {"files": len(files), "lines": sum(f["lines"] for f in files.values()),
                       "chunks": sum(len(f["chunks"]) for f in files.values()),

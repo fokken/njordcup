@@ -9,13 +9,14 @@ allowlist or parser installation is needed. Non-UTF-8 files are currently skippe
 
 Files are grouped by known nested dependency manifests or module directories.
 `--index-mode auto` (default) enhances Python with AST symbol ranges and import/call
-metadata; other text receives best-effort lexical metadata. `--index-mode text`
+metadata, and uses optional Tree-sitter grammars for supported languages; other
+text receives best-effort lexical metadata. See [optional syntax indexing](indexing.md). `--index-mode text`
 uses only bounded text chunks and Unicode-aware identifier search, even for Python.
 This mode does not infer symbols, imports or call edges. Manifest dependency edges
 remain available. Both modes retain original line numbers and cover eligible lines.
 
 Index statistics and focused-review coverage count files by indexing method:
-`python_ast`, `lexical`, and `text`. Missing symbol information is not evidence that
+`python_ast`, `tree_sitter`, `lexical`, and `text`. Missing symbol information is not evidence that
 a file has no functions. Lexical edges are navigation hints, not a sound semantic
 call graph or taint analysis. Model understanding still varies by language.
 
