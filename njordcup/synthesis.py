@@ -32,8 +32,8 @@ def synthesize(report, saved, provider, checkpoint):
                 'max_input_chars': provider.max_input_chars, 'context_window': provider.context_window,
                 'bytes_per_token': provider.bytes_per_token, 'token_margin': provider.token_margin}
     state = saved_synthesis(report, saved)
-    if not state or state.get('settings') != identity or state.get('version') != 1:
-        state = {'version': 1, 'input_hash': digest(data), 'settings': identity, 'nodes': {}, 'status': 'incomplete'}
+    if not state or state.get('settings') != identity or state.get('version') != 2:
+        state = {'version': 2, 'input_hash': digest(data), 'settings': identity, 'nodes': {}, 'status': 'incomplete'}
     saved['report_synthesis'] = state
     if state['status'] == 'complete':
         log.info('Reusing saved report synthesis')

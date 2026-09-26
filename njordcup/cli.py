@@ -300,7 +300,7 @@ def run(argv, control, attach_log=None):
                     if selected is None and interactive and areas:
                         print(overview["summary"], file=sys.stderr)
                         for progress, area in zip(area_progress(memory), areas):
-                            print(f"{progress['id']}. [{progress['status']}, {progress['findings']} findings] {area['title']}: {area['reason']}", file=sys.stderr)
+                            print(f"{progress['id']}. [{progress['status']}] {area['title']}: {area['reason']}", file=sys.stderr)
                         print("Choose an area to review (completed areas can be rerun), or Enter to stop: ", end="", file=sys.stderr, flush=True)
                         try:
                             control.prompting = True
@@ -336,7 +336,7 @@ def run(argv, control, attach_log=None):
                         saved = {**partial, "selected_area": {"id": selected, **area},
                                  "usage": {k: getattr(provider, k, 0) - value for k, value in before.items()}}
                         attempt_id = record_review(memory_path, memory, selected, saved, attempt_id)["id"]
-                        log.debug("Checkpoint saved for area %d: %d/%d chunks reviewed, %d findings", selected, partial.get("coverage", {}).get("chunks_reviewed", 0), partial.get("coverage", {}).get("chunks_total", 0), len(partial.get("findings", [])))
+                        log.debug("Checkpoint saved for area %d: %d/%d chunks reviewed", selected, partial.get("coverage", {}).get("chunks_reviewed", 0), partial.get("coverage", {}).get("chunks_total", 0))
                         if args.automatic:
                             for analysis in partial.get('narrative_analysis', []):
                                 key = ('narrative', analysis['id'])
@@ -364,7 +364,7 @@ def run(argv, control, attach_log=None):
                     report["usage"] = {k: getattr(provider, k, 0) - value for k, value in before.items()}
                     attempt = record_review(memory_path, memory, selected, report, attempt_id)
                     session_reviews.append(attempt["report"])
-                    log.info("Area %d saved: %s, %d findings", selected, report["status"], len(report.get("findings", [])))
+                    log.info("Area %d analysis saved: %s", selected, report["status"])
                     if report.get("stop_reason"):
                         break
                     if not interactive and not args.investigate_all and not args.automatic:

@@ -53,7 +53,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
     report['analysis_format'] = 'narrative' if getattr(provider, 'output_mode', None) == 'prompt' else 'structured'
     seeds = seeds or []
     signature = hashlib.sha256(json.dumps({"seeds": seeds, "rounds": context_rounds,
-                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 7,
+                                           "context_chars": context_chars, "index_mode": index.get("index_mode", "auto"), "version": 8 if report["analysis_format"] == "narrative" else 7,
                                            "analysis_format": report['analysis_format'],
                                            "budgets": {k: getattr(provider, k, None) for k in
                                                        ("context_window", "bytes_per_token", "token_margin", "max_input_chars", "max_tokens")}}, sort_keys=True).encode()).hexdigest()

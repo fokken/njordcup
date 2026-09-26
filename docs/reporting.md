@@ -18,8 +18,9 @@ includes a print layout. No scripts, external fonts, or network resources are ne
 Source excerpts, filenames, and model text are escaped as plain HTML text. Reports
 are replaced atomically and created with private file permissions.
 
-The report includes severity counts, current findings with evidence, attack scenarios
-and remediation, area coverage, scanner dispositions, and outstanding limitations.
+The report emphasizes saved security analyses and area coverage, with processing status
+and outstanding limitations. It also includes any structured issue details and scanner
+dispositions. Finding totals and severity counters are not shown.
 Findings are deduplicated across areas using path, line, and CWE. As with `--summary`,
 current means the latest saved attempt per area in the active snapshot; archived
 snapshots and superseded attempts are excluded. The filesystem is not rescanned.
@@ -77,3 +78,26 @@ Incomplete synthesis produces an HTML report with an unfinished-summary notice a
 `2`; cancellation/deadline uses the usual stop exit code and preserves any existing HTML.
 All original results remain available. Synthesis requires `--model` (or `REVIEW_MODEL`)
 and is only available with the two HTML report commands.
+
+## Systematic narrative review
+
+Use `--automatic --output-mode prompt` to work through all eligible source components
+in bounded code batches. Each response is saved verbatim. The security prompt asks for
+**Title, Description, Impact, Remediation** for each potential vulnerability, including
+source references, evidence, preconditions and uncertainty. These are writing guidelines;
+responses are never rejected just for missing headings. A batch without supported issues
+should still describe its reviewed scope and limitations.
+
+```sh
+python3 -m njordcup /path/to/repo --automatic --output-mode prompt \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1
+python3 -m njordcup /path/to/repo --report
+```
+
+The report compiles all current saved batch analyses, including unfinished responses,
+with their source paths. Add `--synthesize` and model settings for an executive summary.
+Coverage tracks processed chunks rather than a vulnerability count. Source exclusions,
+size limits and input/call budgets still apply; rerun incomplete audits to continue.
+Already completed areas are skipped; use `--rerun` to regenerate them with the new
+issue-writing instructions. Structured modes and their JSON counters remain available
+for existing integrations; the default output mode is unchanged.

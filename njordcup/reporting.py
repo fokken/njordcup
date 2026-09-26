@@ -30,6 +30,7 @@ def narrative_section(title, entries):
     if not entries:
         return ''
     blocks = ''.join(f"<article><h3>{e(a.get('component', 'Area ' + str(a.get('area_id', ''))))}</h3>"
+                     f"<p>Source files: {e(', '.join(a.get('paths', [])) or 'See analysis')}</p>"
                      f"<p>Response: {'complete' if a.get('complete') else 'unfinished or empty'}. "
                      f"Unstructured model analysis; claims require manual review.</p><pre>{e(a['text'])}</pre></article>"
                      for a in entries)
@@ -66,7 +67,7 @@ def render_html(summary):
             return (f"{coverage.get(key + '_reviewed', 0):,} / {coverage[key + '_total']:,}"
                     if key + '_total' in coverage else '—')
         rows.append(f"<tr><td>{e(area['id'])}. {e(area['title'])}</td><td>{e(area['status'])}</td>"
-                    f"<td>{e(fraction('lines'))}</td><td>{e(fraction('chunks'))}</td><td>{e(area['findings'])}</td></tr>")
+                    f"<td>{e(fraction('lines'))}</td><td>{e(fraction('chunks'))}</td></tr>")
     gaps = [f"Area {item['area_id']}: {item['detail']}" for key in ('limitations', 'errors') for item in summary.get(key, [])]
     gaps.extend(summary.get('flyover_unknowns', []))
     gaps_html = ''.join(f'<li>{e(item)}</li>' for item in dict.fromkeys(gaps)) or '<li>No limitations recorded.</li>'
@@ -83,20 +84,25 @@ def render_html(summary):
             f'{count} {status}' for status, count in scanner['counts'].items())) + '</p>' + ''.join(dispositions) + '</section>'
     counts = summary['area_counts']
     metrics = ''.join(f'<div class="metric"><strong>{value}</strong><span>{label}</span></div>' for value, label in (
-        (len(findings), 'Structured findings'), (summary['findings_by_severity']['critical'], 'Critical'),
-        (summary['findings_by_severity']['high'], 'High'), (f"{counts['complete']} / {counts['total']}", 'Areas complete')))
+        (f"{counts['complete']} / {counts['total']}", 'Areas complete'),
+        (counts['incomplete'], 'Areas incomplete'), (counts['unreviewed'], 'Areas unreviewed'),
+        (len(summary.get('narrative_analysis', [])), 'Saved security analyses')))
+    issues_section = '<section><h2>Identified issues</h2>' + ''.join(cards) + '</section>' if cards else ''
+    analysis_section = narrative_section('Security analysis', summary.get('narrative_analysis', []))
+    if not cards and not analysis_section:
+        analysis_section = '<section><h2>Security analysis</h2><p>No security analysis text or issue details recorded. Consult review coverage and limitations below.</p></section>'
     now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
     content = f'''<header><div class="brand">njordcup / Security review</div><h1>Audit report</h1>
 <p>{e(summary['summary'])}</p><p class="muted">Audit status: {e(summary['audit_status'])} · Generated {e(now)}<br>
 Last saved review: {e(summary.get('last_review_at') or 'No focused reviews yet')}</p>
-<p>Saved snapshot only. Findings are potential security issues supported by reviewed source; they require human assessment. Coverage records processing, not proof of security.</p></header>
+<p>Saved snapshot only. Read the analyses for potential vulnerabilities, evidence, impact and remediation. Model observations require human assessment. Coverage records processing, not proof of security.</p></header>
 {synthesis_section(summary)}
 <div class="metrics">{metrics}</div>
-<section><h2>Identified issues</h2>{''.join(cards) or '<p>No structured findings recorded. Read any narrative analysis below; an empty findings list does not mean the code is secure.</p>'}</section>
-{narrative_section('Security analysis', summary.get('narrative_analysis', []))}
+{analysis_section}
+{issues_section}
 {narrative_section('Architectural analysis', summary.get('architectural_analysis', []))}
 <section><h2>Review coverage</h2><p>Reviewed / total within each area. Areas can overlap; these counts must not be added into a repository-wide percentage. SARIF reviews cover reported chunks.</p>
-<div class="table-wrap"><table><thead><tr><th>Area</th><th>Status</th><th>Lines</th><th>Chunks</th><th>Issues</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>
+<div class="table-wrap"><table><thead><tr><th>Area</th><th>Status</th><th>Lines</th><th>Chunks</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></section>
 {scanner_html}<section><h2>Limitations and outstanding questions</h2><ul>{gaps_html}</ul></section>
 <footer><p>Technology stack: {e(', '.join(summary['tech_stack']) or 'Not mapped')}<br>
 Snapshot: {e(summary['snapshot_fingerprint'])}<br>{e(summary['snapshot_note'])}</p></footer>

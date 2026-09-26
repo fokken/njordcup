@@ -22,7 +22,7 @@ def instructions(schema):
     if 'report_synthesis' in schema['properties']:
         return base + ('Synthesize the supplied saved analysis fragments into a concise executive summary. '
                        'Fragments may split records; do not guess missing context. For security reports, prioritize '
-                       'potential issues, connect related observations, preserve source references, uncertainty, '
+                       'potential issues, connect related observations, and describe each issue using Title, Description, Impact and Remediation. Preserve source references, uncertainty, '
                        'counterevidence and coverage gaps. Do not promote narrative claims to verified findings '
                        'or infer security from a lack of findings. For implementation reports describe overall '
                        'architecture, functionality, languages, stack, dependencies and flows. When combining '
@@ -33,8 +33,13 @@ def instructions(schema):
         return base + 'Describe the implementation, important functionality, languages, technology stack, dependencies, entry points and data/control flows. Do not perform a vulnerability audit.'
     if 'areas' in schema['properties']:
         return base + 'Describe the architecture, technology stack, dependencies, important features, trust boundaries and areas worth security review. Source is sampled; distinguish observed behavior from assumptions.'
-    return base + ('Review supplied target code for security issues. Explain each potential issue, its source evidence, '
-                   'attack scenario, preconditions and remediation. Assess scanner hypotheses when supplied, including '
+    return base + ('Systematically analyze every supplied target chunk for potential security vulnerabilities, using '
+                   'reference code as context. For each potential issue, use these Markdown headings: '
+                   'Title, Description, Impact, Remediation. In Description cite source paths and lines, '
+                   'explain the behavior, evidence, attack scenario, preconditions and uncertainty. In Impact '
+                   'explain the possible security consequences. In Remediation give concrete corrective steps. '
+                   'These headings are writing guidance, not a required machine-readable format. '
+                   'Assess scanner hypotheses when supplied, including '
                    'counterevidence and uncertainty. Do not treat scanner claims as proof. If there are no supported '
                    'issues, explain the reviewed scope and limitations. Do not invent omitted code.')
 

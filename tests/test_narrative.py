@@ -95,10 +95,37 @@ class NarrativeTests(unittest.TestCase):
                 self.assertEqual(main([tmp, '--report']), 0)
                 self.assertEqual(main([tmp, '--implementation-report']), 0)
             self.assertEqual(opener.return_value.open.call_count, before)
+            security_html = (root / '.njordcup/memory.report.html').read_text()
+            self.assertNotIn('Structured findings', security_html)
+            self.assertNotIn('<th>Issues</th>', security_html)
+            self.assertNotIn('No structured findings', security_html)
+            self.assertIn('Saved security analyses', security_html)
+            self.assertIn('Source files: app.py', security_html)
             for path in ('memory.report.html', 'memory.implementation.html'):
                 html = (root / '.njordcup' / path).read_text()
                 self.assertIn(escape(TEXT, quote=True), html)
                 self.assertNotIn('<script>', html)
+
+    def test_narrative_review_processes_every_indexed_chunk(self):
+        sources = {f'module{i}/app.txt': 'process(input)\n' * 60 for i in range(3)}
+        index = build_index(sources, list(sources), chunk_chars=400)
+        p = provider()
+        transmitted = []
+        def respond(request, *args):
+            body = json.loads(request.data)
+            payload = json.loads(body['messages'][1]['content'])
+            transmitted.extend(payload['target_chunks'])
+            for heading in ('Title', 'Description', 'Impact', 'Remediation'):
+                self.assertIn(heading, body['messages'][0]['content'])
+            return envelope('Analysis for batch ' + str(len(transmitted)))
+        with patch.object(p, '_request', side_effect=respond):
+            result = review(sources, list(sources), [], p, repository_index=index, batch_chars=1800)
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(set(transmitted), set(result['chunk_results']))
+        self.assertEqual(len(transmitted), result['coverage']['chunks_total'])
+        self.assertEqual(result['coverage']['chunks_reviewed'], result['coverage']['chunks_total'])
+        self.assertGreater(len(result['narrative_analysis']), 1)
+        self.assertEqual({path for a in result['narrative_analysis'] for path in a['paths']}, set(sources))
 
     def test_partial_mapping_and_implementation_are_kept_on_disk(self):
         sources = {'app.py': 'safe()'}
