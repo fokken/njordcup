@@ -2,6 +2,9 @@
 
 [Back to README](../README.md)
 
+For copyable audit commands and a budget table, see the
+[16k, 32k, 64k and 128k quick start](getting-started.md#quick-start-by-context-size).
+
 Repository size determines the number of requests, not a minimum context window.
 For 50k, 150k and 250k-line repositories, **32k tokens** is a starting configuration
 to measure on your model, with reduced budgets such as:

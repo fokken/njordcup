@@ -5,6 +5,81 @@
 Run from this checkout, or install with `pip install -e .` for the `njordcup` command.
 Replace `YOUR_MODEL` with a model served by your endpoint.
 
+## Quick start by context size
+
+Choose the row matching the context window **configured on your inference server**.
+These are conservative starting budgets, not measured model-quality presets. Here,
+16k means 16,384 tokens; use your server's exact limit if it differs. The flags tell
+njordcup how to budget requests; they do not resize the server's context window.
+
+| Server context | `--context-window` | `--max-tokens` | `--max-input-chars` | `--batch-chars` | `--context-chars` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 16k | 16384 | 3072 | 11000 | 4000 | 2000 |
+| 32k | 32768 | 4096 | 24000 | 10000 | 6000 |
+| 64k | 65536 | 6000 | 48000 | 20000 | 10000 |
+| 128k | 131072 | 8000 | 96000 | 32000 | 16000 |
+
+`--max-tokens` reserves output tokens. `--max-input-chars` caps the serialized
+messages, including instructions and metadata. `--batch-chars` controls target-code
+batches; `--context-chars` limits additional reference code. These are ceilings,
+not amounts the tool always sends. All rows retain the defaults of
+`--bytes-per-token 1` and `--token-margin 1024`; the token estimate and character
+limit both apply. Larger windows need not be filled, especially on slower hardware.
+
+Run **one** of these commands, replacing the repository path, model and endpoint.
+The examples use a local endpoint at port 11434; for a deployment at port 8000,
+replace the base URL with `http://localhost:8000/v1`. Local endpoints without
+authentication need no key. If yours requires one, set `OPENAI_API_KEY` or use
+`--api-key-env` to name your credential variable.
+
+```sh
+# 16k context
+python3 -m njordcup /path/to/repo --automatic --output-mode prompt \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --context-window 16384 --max-tokens 3072 --max-input-chars 11000 \
+  --batch-chars 4000 --context-chars 2000
+
+# 32k context
+python3 -m njordcup /path/to/repo --automatic --output-mode prompt \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --context-window 32768 --max-tokens 4096 --max-input-chars 24000 \
+  --batch-chars 10000 --context-chars 6000
+
+# 64k context
+python3 -m njordcup /path/to/repo --automatic --output-mode prompt \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --context-window 65536 --max-tokens 6000 --max-input-chars 48000 \
+  --batch-chars 20000 --context-chars 10000
+
+# 128k context
+python3 -m njordcup /path/to/repo --automatic --output-mode prompt \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --context-window 131072 --max-tokens 8000 --max-input-chars 96000 \
+  --batch-chars 32000 --context-chars 16000
+```
+
+These commands map the repository and review all eligible source components, saving
+progress in `.njordcup/memory.json`. Re-run the same command to resume unfinished
+work. Remove `--automatic` to choose areas interactively. Add `--log-file
+/path/outside/repo/njordcup.log` to retain runtime logs. Calls are unlimited by
+default; use `--max-calls` or `--max-seconds` for an optional run budget.
+
+Generate the saved audit's HTML report and progress summary without model calls:
+
+```sh
+python3 -m njordcup /path/to/repo --report
+python3 -m njordcup /path/to/repo --summary
+```
+
+The HTML report is written to `.njordcup/memory.report.html`. A prose review can
+contain potential vulnerabilities even when the structured findings count is zero.
+If responses end with `finish_reason=length`, increase the output allowance while
+reducing input budgets to leave room. Explicit input-overflow errors trigger bounded
+recovery; an unfit single chunk remains incomplete. See [context budgeting](configuration.md#adaptive-context-budgeting)
+and [troubleshooting](logging.md#diagnosing-reviewerror) for adjustments.
+
+## Other workflows
+
 ```sh
 # Local index only: no credentials or model calls.
 python3 -m njordcup /path/to/repo --index-only
