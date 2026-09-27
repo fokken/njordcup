@@ -74,12 +74,15 @@ def provider_identity(provider):
     return {"model": provider.model, "base_url": provider.base_url, "output_mode": provider.output_mode}
 
 
-def read_memory(path, sources, targets, provider, index_mode=None):
+def read_memory(path, sources, targets, provider, index_mode=None, parser_profile=None):
     memory = json.loads(path.read_text())
     if not isinstance(memory, dict) or memory.get("version") not in {1, 2} or memory.get("fingerprint") != fingerprint(sources, targets) or memory.get("provider") != provider_identity(provider):
         raise ReviewError("Memory is stale or incompatible; run a new flyover and select an area again")
     if index_mode is not None and memory.get("index_mode", "auto") != index_mode:
         raise ReviewError("Index mode changed; run a new flyover before selecting an area")
+    saved_profile = memory.get('index_snapshot', {}).get('parser_profile') if memory['version'] == 2 else memory.get('parser_profile')
+    if parser_profile is not None and saved_profile != parser_profile:
+        raise ReviewError("Parser profile changed; run a new flyover before selecting an area")
     if memory["version"] == 1 and not memory.get("sarif_scans"):
         validate_overview(memory.get("overview"), sources, targets)
     else:
@@ -99,7 +102,8 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
     saved = None
     if not refresh and memory_path.is_file():
         try:
-            saved = read_memory(memory_path, sources, targets, provider, index_mode=index_mode)
+            saved = read_memory(memory_path, sources, targets, provider, index_mode=index_mode,
+                                parser_profile=repository_index.get('parser_profile') if repository_index else None)
         except (ValueError, KeyError, TypeError, ReviewError):
             pass
     if saved and not saved.get("coverage", {}).get("pages_pending"):
@@ -124,7 +128,8 @@ def flyover(sources, targets, provider, memory_path, refresh=False, repository_i
             raise ReviewError("Cannot preserve invalid memory; choose a new --memory path")
         archives = old.pop("archives", [])
         archives.append(old)
-    memory = {"version": 1, "index_mode": index_mode, "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
+    memory = {"version": 1, "index_mode": index_mode, "parser_profile": repository_index.get('parser_profile') if repository_index else None,
+              "fingerprint": fingerprint(sources, targets), "provider": provider_identity(provider),
               "coverage": payload["coverage"], "overview": overview, "reviews": [], "archives": archives}
     save_memory(memory_path, memory)
     log.info("Flyover saved: %d suggested areas", len(overview["areas"]))

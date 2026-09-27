@@ -17,7 +17,8 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
     from .flyover import OVERVIEW, PROMPT, fingerprint, make_payload, provider_identity, validate_overview
     old = json.loads(path.read_text()) if path.is_file() else {}
     mode_matches = old.get("index_mode", "auto") == index.get("index_mode", "auto")
-    if not analyze and not refresh and mode_matches and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
+    profile_matches = old.get("index_snapshot", {}).get("parser_profile") == index.get("parser_profile")
+    if not analyze and not refresh and mode_matches and profile_matches and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
         log.info("Reusing saved component map")
         return old, True
     compatible = old.get("version") == 2 and old.get("provider") == provider_identity(provider) and not refresh and mode_matches
@@ -71,7 +72,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
         log.info('Incremental checkpoints retained for %d files across %d areas',
                  len({r['path'] for checkpoint in resume_reviews.values() for r in checkpoint['chunk_results'].values()}),
                  len(resume_reviews))
-    changed = old.get("fingerprint") != fingerprint(sources, targets) or not compatible
+    changed = old.get("fingerprint") != fingerprint(sources, targets) or not compatible or not profile_matches
     archives = list(old.get("archives", []))
     if old and changed:
         archives.append({k: v for k, v in old.items() if k != "archives"})

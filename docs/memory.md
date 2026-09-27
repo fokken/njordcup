@@ -30,7 +30,7 @@ findings and coverage are not copied from the old snapshot. Reference-source has
 invalidate additional checkpoints. Root/ancestor manifests participate in dependency edges. Dynamic dispatch,
 reflection and unresolved cross-language links can evade inferred dependencies;
 use `--refresh-memory` for a conservative full reset. Small legacy flyovers reset
-as a whole. SARIF scans are archived on source changes and must be reimported.
+as a whole. SARIF scans are archived on source or parser-profile changes and must be reimported.
 Changing `--index-mode` invalidates the old map and review checkpoints. Run a new
 flyover with the new mode before selecting an area.
 

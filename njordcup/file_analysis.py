@@ -20,7 +20,7 @@ def compile_files(targets, units, results):
         files.append({'path': path, 'paths': [path], 'status': 'complete' if complete else 'incomplete',
                       'complete': complete, 'parts': parts, 'text': join_parts(parts),
                       'chunks_total': len(chunks), 'chunks_reviewed': sum(r['status'] == 'complete' for r in saved),
-                      'note': 'Empty file; no source chunks to analyze.' if not chunks else ''})
+                      'note': 'No source chunks selected for this file in this review.' if not chunks else ''})
     return files
 
 
@@ -52,6 +52,8 @@ def merge_files(reviews):
                 entry['text'] = candidate['text']
                 entry['consolidation_status'] = 'complete'
                 break
+        if entry['consolidation_status'] == 'pending':
+            entry['complete'] = False
         entry['status'] = 'complete' if entry['complete'] else 'incomplete'
         files.append(entry)
     return sorted(files, key=lambda f: f['path'])

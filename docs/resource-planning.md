@@ -2,8 +2,9 @@
 
 [Back to README](../README.md)
 
-For 50k, 150k and 250k-line repositories alike, plan on a **64k-token context** for
-default settings, or start with **32k** and reduced budgets, for example:
+Repository size determines the number of requests, not a minimum context window.
+For 50k, 150k and 250k-line repositories, **32k tokens** is a starting configuration
+to measure on your model, with reduced budgets such as:
 
 ```sh
 python3 -m njordcup /path/to/repo --model YOUR_MODEL \
@@ -13,11 +14,16 @@ python3 -m njordcup /path/to/repo --model YOUR_MODEL \
 
 These are planning estimates, not certified minimums. Assuming 2–4 characters per
 token, a 48,000-character request is roughly 12k–24k input tokens, plus up to 4k
-output tokens and server formatting overhead. Some languages/content tokenize
+output tokens and server formatting overhead. This is only an illustrative tokenizer
+estimate, not the controller's default estimate. Some languages/content tokenize
 less efficiently. A 16k window requires further tuning and sacrifices useful context.
 The adaptive planner defaults to a more conservative one serialized byte per token,
 so it may split batches or omit context before reaching those character caps. Set
 the actual server window explicitly; see [budget configuration](configuration.md).
+A 64k window allows more surrounding context, but does not guarantee that the
+default 80,000-character cap fits. Smaller windows can work with smaller batches
+and output allowances; cross-file understanding may suffer. There is no validated
+minimum context size or model size for reliable vulnerability detection.
 
 Budget roughly **4 GB RAM and two CPU cores for the njordcup controller** as an
 initial deployment allowance, excluding inference and growing audit archives.

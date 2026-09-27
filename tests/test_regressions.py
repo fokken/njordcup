@@ -12,7 +12,7 @@ from njordcup.agent import review
 from njordcup.budget import shrink_payload
 from njordcup.cli import main
 from njordcup.errors import ReviewError
-from njordcup.flyover import flyover, make_payload
+from njordcup.flyover import flyover, make_payload, read_memory
 from njordcup.index import build_index, CodeIndex
 from njordcup.mapping import hierarchical_flyover
 from njordcup.repository import discover
@@ -23,6 +23,54 @@ from test_scale import AutomaticProvider, make_assessment
 
 
 class RegressionTests(unittest.TestCase):
+    def test_parser_change_invalidates_saved_reviews_and_archives_scan(self):
+        sources = {'app.py': 'safe()'}
+        index = build_index(sources, list(sources))
+        for analyze in (False, True):
+            with self.subTest(analyze=analyze), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'memory.json'
+                memory, _ = hierarchical_flyover(sources, list(sources), AutomaticProvider(), path, index)
+                import_scan(memory, {'id': 'scan', 'candidates': [{'id': 'one', 'rule_id': 'rule', 'path': 'app.py', 'line': 1, 'location_status': 'resolved'}]}, index)
+                memory['reviews'] = [{'area_id': 1, 'report': {'status': 'complete'}}]
+                memory['index_snapshot']['parser_profile'] = {'old': 'parser'}
+                path.write_text(json.dumps(memory))
+                with self.assertRaisesRegex(ReviewError, 'Parser profile changed'):
+                    read_memory(path, sources, list(sources), AutomaticProvider(), parser_profile=index['parser_profile'])
+                updated, reused = hierarchical_flyover(sources, list(sources), AutomaticProvider(), path, index, analyze=analyze)
+                self.assertFalse(reused)
+                self.assertEqual(updated['reviews'], [])
+                self.assertEqual(updated['index_snapshot']['parser_profile'], index['parser_profile'])
+                self.assertEqual(updated['archives'][-1]['sarif_scans'], memory['sarif_scans'])
+                self.assertEqual(updated['archives'][-1]['reviews'], memory['reviews'])
+
+    def test_structured_flyover_rebuilds_after_parser_change(self):
+        sources = {'app.py': 'safe()'}
+        index = build_index(sources, list(sources))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'memory.json'
+            memory, _ = flyover(sources, list(sources), AutomaticProvider(), path, repository_index=index)
+            memory['parser_profile'] = {'old': 'parser'}
+            memory['reviews'] = [{'area_id': 1, 'report': {'status': 'complete'}}]
+            path.write_text(json.dumps(memory))
+            provider = AutomaticProvider()
+            updated, reused = flyover(sources, list(sources), provider, path, repository_index=index)
+            self.assertFalse(reused)
+            self.assertEqual(provider.calls, 1)
+            self.assertEqual(updated['reviews'], [])
+            self.assertEqual(updated['archives'][-1]['reviews'], memory['reviews'])
+
+    def test_overlapping_file_analyses_need_combined_consolidation(self):
+        from njordcup.file_analysis import merge_files
+        def report(identifier):
+            return {'file_analysis': [{'path': 'app.py', 'paths': ['app.py'], 'note': '',
+                                      'complete': True, 'consolidation_status': 'not_needed',
+                                      'parts': [{'id': identifier, 'start': 1, 'end': 2, 'text': identifier}]}]}
+        merged = merge_files([(1, report('first')), (2, report('second'))])[0]
+        self.assertEqual(merged['consolidation_status'], 'pending')
+        self.assertEqual(merged['status'], 'incomplete')
+        self.assertFalse(merged['complete'])
+        self.assertEqual(len(merged['parts']), 2)
+
     def test_summary_cannot_overwrite_index(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 COUNTERS = ('requests', 'attempts', 'cache_hits', 'retries', 'input_tokens', 'output_tokens',
-            'elapsed_seconds', 'http_seconds', 'failures', 'responses_with_usage', 'responses_without_usage')
+            'elapsed_seconds', 'http_seconds', 'context_overflows', 'failures', 'responses_with_usage', 'responses_without_usage')
 
 
 def snapshot(provider):

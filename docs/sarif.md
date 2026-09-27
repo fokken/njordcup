@@ -2,15 +2,17 @@
 
 [Back to README](../README.md)
 
+For structured, evidence-checked dispositions, select a structured output mode:
+
 ```sh
 # Import candidates and choose an investigation interactively.
 python3 -m njordcup /path/to/repo --sarif /path/to/results.sarif \
-  --model YOUR_MODEL --base-url http://localhost:11434/v1 --api-key-env OLLAMA_API_KEY
+  --output-mode json_schema --model YOUR_MODEL --base-url http://localhost:11434/v1 --api-key-env OLLAMA_API_KEY
 
 # Authorize ALL findings, including low-level and suppressed results.
 python3 -m njordcup /path/to/repo --sarif /path/to/results.sarif \
   --investigate-all --max-calls 100 \
-  --model YOUR_MODEL --base-url http://localhost:11434/v1 --api-key-env OLLAMA_API_KEY
+  --output-mode json_schema --model YOUR_MODEL --base-url http://localhost:11434/v1 --api-key-env OLLAMA_API_KEY
 ```
 
 Import builds a local component map; it does not spend the model budget on a full
@@ -26,7 +28,7 @@ assessment, not proof. Related locations and code-flow source are retrieved with
 context limits. SARIF investigations cover the chunks containing reported locations,
 not every line of each affected file.
 
-With `--output-mode prompt`, scanner investigations are saved as free-form narratives.
+With the default `--output-mode prompt`, scanner investigations are saved as free-form narratives.
 They are not parsed into confirmed/dismissed results, so scanner dispositions remain
 inconclusive and all-results mode returns `2`. The text is still available in memory,
 summaries and HTML. Use `json_schema` or `json_object` for structured adjudication.

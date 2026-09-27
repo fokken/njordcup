@@ -69,7 +69,7 @@ an ordinary flyover might suggest only a subset of files. Existing include/exclu
 filters and `--base` still define the target scope. Switching from a small suggested-area
 map to a component map archives the old snapshot and starts the component reviews.
 
-Each verified batch is saved. Newly encountered findings are announced immediately
+Each completed source batch is saved. Structured modes additionally verify findings. Newly encountered findings are announced immediately
 after that checkpoint as `Potential issue saved:` messages on stderr; stdout remains
 the final JSON result. Findings pass the existing model verification and exact-source
 checks first. Duplicate path/line/CWE notifications are suppressed within an invocation.

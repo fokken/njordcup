@@ -271,7 +271,8 @@ def run(argv, control, attach_log=None):
                     if not memory_path.is_file():
                         raise ReviewError("Run a flyover first before selecting an area")
                     # An area number must never be reinterpreted against regenerated memory.
-                    memory, reused = read_memory(memory_path, sources, targets, provider, index_mode=args.index_mode), True
+                    memory, reused = read_memory(memory_path, sources, targets, provider, index_mode=args.index_mode,
+                                                 parser_profile=repository_index.get('parser_profile')), True
                 elif args.sarif or args.automatic:
                     from .mapping import hierarchical_flyover
                     memory, reused = hierarchical_flyover(sources, targets, provider, memory_path, repository_index,

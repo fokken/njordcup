@@ -43,7 +43,9 @@ either report command for a saved AI executive summary.
 ## Documentation
 
 - [Getting started](docs/getting-started.md): workflows, review scope, and exit codes.
-- [Configuration](docs/configuration.md): providers, budgets, caching, and execution logging.
+- [Configuration](docs/configuration.md): providers, budgets, caching, and overflow recovery.
+- [Logging](docs/logging.md): progress, runtime logfiles, tracing, and troubleshooting.
+- [Performance](docs/performance.md): prompt efficiency and phase measurements.
 - [Semgrep SARIF](docs/sarif.md): importing findings, investigating all results, and resuming.
 - [Implementation analysis](docs/implementation-analysis.md): saved implementation descriptions and security reuse.
 - [HTML reports](docs/reporting.md): formatted findings, evidence, and coverage.
@@ -51,6 +53,7 @@ either report command for a saved AI executive summary.
 - [Architecture and coverage](docs/architecture.md): indexing, retrieval, and limitations.
 - [Resource planning](docs/resource-planning.md): context windows, hardware, and scale benchmarks.
 - [Testing and evaluation](docs/testing.md): tests and model-quality smoke fixtures.
+- [Suggested improvements](docs/audit-improvements.md): priorities for audit effectiveness, coverage, and detail.
 
 Local indexing has been exercised on a synthetic 250k-line repository. Live model
 accuracy remains unvalidated; coverage counts do not establish that code is secure.

@@ -121,7 +121,13 @@ memory and CLI output. `file_consolidations` stores resumable model checkpoints.
 consolidation leaves the review incomplete, even if all code chunks were processed.
 On resume, completed source chunks are reused and only unfinished consolidation work is
 retried. Calls use the same endpoint, context/output budgets, retries and optional call
-or time limits as the audit. Empty files have an explicit note and need no model call.
+or time limits as the audit. Files with no selected chunks have an explicit scope note
+and need no model call.
+
+When overlapping areas contribute different responses for the same file, the offline
+report retains all unique parts. It marks consolidation pending unless a saved
+consolidation covers that exact set. Offline reporting does not perform a new
+cross-area consolidation; `--synthesize` adds a report-wide summary instead.
 
 Completed old areas are still skipped by automatic mode. Use `--rerun` to regenerate
 existing reviews with per-file analysis. Earlier saved responses remain readable in reports.

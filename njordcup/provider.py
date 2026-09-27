@@ -13,7 +13,7 @@ import math
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
-from .errors import ReviewError, RunStopped, ContextBudgetExceeded
+from .errors import ReviewError, RunStopped, ContextBudgetExceeded, ServerContextOverflow
 from .runtime import RunControl
 from .narrative import Narrative, instructions as narrative_instructions
 
@@ -92,6 +92,8 @@ class OpenAIProvider:
         self.http_seconds = 0.0
         self.responses_with_usage = self.responses_without_usage = 0
         self.performance = {}
+        self.server_input_chars = None
+        self.context_overflows = 0
         if request_timeout <= 0 or max_retries < 0 or retry_base <= 0 or retry_max_delay <= 0:
             raise ValueError("Timeouts/delays must be positive and retries nonnegative")
         self.request_timeout, self.max_retries = request_timeout, max_retries
@@ -140,7 +142,7 @@ class OpenAIProvider:
 
     def fits(self, instructions, payload, schema):
         chars, tokens = self.request_size(self.request_body(instructions, payload, schema))
-        return chars <= self.max_input_chars and (self.context_window is None or
+        return chars <= min(self.max_input_chars, self.server_input_chars or self.max_input_chars) and (self.context_window is None or
                tokens + self.max_tokens + self.token_margin <= self.context_window)
 
     def fit_payload(self, instructions, payload, schema):
@@ -166,11 +168,27 @@ class OpenAIProvider:
                  'flyover' if 'areas' in properties else 'review')
         names = {'attempts': 'calls', 'cache_hits': 'cache_hits', 'retries': 'retries',
                  'input_tokens': 'input_tokens', 'output_tokens': 'output_tokens', 'http_seconds': 'http_seconds',
-                 'responses_with_usage': 'responses_with_usage', 'responses_without_usage': 'responses_without_usage'}
+                 'responses_with_usage': 'responses_with_usage', 'responses_without_usage': 'responses_without_usage',
+                 'context_overflows': 'context_overflows'}
         before = {k: getattr(self, attr) for k, attr in names.items()}
         started, failed = time.monotonic(), False
         try:
-            return self._ask(instructions, payload, schema)
+            # Retry only a smaller request. This limit is separate from transient
+            # transport retries; every network attempt still counts toward max_calls.
+            for recovery in range(4):
+                try:
+                    return self._ask(instructions, payload, schema)
+                except ServerContextOverflow:
+                    self.context_overflows += 1
+                    chars, _ = self.request_size(self.request_body(instructions, payload, schema))
+                    self.server_input_chars = min(self.server_input_chars or chars, max(1, int(chars * 0.75)))
+                    log.warning('Server context overflow; reducing invocation input cap to %d characters (recovery %d/3)',
+                                self.server_input_chars, min(recovery + 1, 3))
+                    if recovery == 3:
+                        raise ContextBudgetExceeded('Server context recovery limit reached; reduce input/output budgets') from None
+                    # fit_payload trims only optional context/sampled flyover material;
+                    # mandatory input failures return to the review batch splitter.
+                    self.fit_payload(instructions, payload, schema)
         except BaseException:
             failed = True
             raise
@@ -312,23 +330,31 @@ class OpenAIProvider:
             except urllib.error.HTTPError as exc:
                 retry_after = exc.headers.get("Retry-After") if exc.headers else None
                 code = exc.code
+                error_chunks, complete = [], True
+                retained = 0
                 try:
-                    if self.trace:
-                        error_chunks = []
-                        complete = True
-                        try:
-                            while True:
-                                self.control.check()
-                                chunk = exc.read1(65536)
-                                if not chunk:
-                                    break
-                                error_chunks.append(chunk)
-                        except (OSError, http.client.HTTPException):
+                    # Inspect a bounded prefix even when tracing is disabled. Error
+                    # content is never echoed into normal logs or exception messages.
+                    try:
+                        while self.trace or retained < 65536:
+                            self.control.check()
+                            chunk = exc.read1(65536 if self.trace else 65536 - retained)
+                            if not chunk:
+                                break
+                            error_chunks.append(chunk)
+                            retained += len(chunk)
+                        else:
                             complete = False
-                        self.trace_response(request_id, b''.join(error_chunks), status=code,
-                                            elapsed_seconds=time.monotonic() - started, complete=complete)
+                    except (OSError, http.client.HTTPException):
+                        complete = False
+                    raw_error = b''.join(error_chunks)
+                    self.trace_response(request_id, raw_error, status=code,
+                                        elapsed_seconds=time.monotonic() - started, complete=complete)
                 finally:
                     exc.close()
+                from .overflow import is_context_overflow
+                if is_context_overflow(code, raw_error):
+                    raise ServerContextOverflow('Provider rejected the request: context length exceeded') from None
                 if code not in RETRYABLE_HTTP:
                     raise RunStopped("provider_error", f"Provider HTTP {code}; check endpoint, credentials, model and output mode") from None
                 failure = f"Provider HTTP {code}"

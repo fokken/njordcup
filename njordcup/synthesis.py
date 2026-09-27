@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from .errors import ReviewError, RunStopped
+from .errors import ReviewError, RunStopped, ContextBudgetExceeded
 from .flyover import provider_identity
 from .narrative import Narrative
 
@@ -73,7 +73,7 @@ def synthesize(report, saved, provider, checkpoint):
         middle = len(text) // 2
         return split(text[:middle]) + split(text[middle:])
 
-    try:
+    def generate():
         fragments = split(json.dumps(data, ensure_ascii=True, sort_keys=True))
         if len(fragments) == 1:
             result = ask(fragments, 'summarize')
@@ -91,6 +91,18 @@ def synthesize(report, saved, provider, checkpoint):
                         reduced.append(ask(pair, 'combine'))
                 summaries = reduced
             result = summaries[0]
+        return result
+
+    try:
+        for recovery in range(4):
+            previous_cap = getattr(provider, "server_input_chars", None)
+            try:
+                result = generate()
+                break
+            except ContextBudgetExceeded:
+                if recovery == 3 or getattr(provider, "server_input_chars", None) == previous_cap:
+                    raise
+                log.info("Repartitioning synthesis input after server context rejection")
         state.update(status='complete', text=result, saved_at=datetime.now(timezone.utc).isoformat())
         state.pop('error', None)
         checkpoint()

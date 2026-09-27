@@ -28,14 +28,20 @@ lockfiles, SARIF artifacts and symlinks are excluded. Additional filters are def
 in [njordcup/repository.py](../njordcup/repository.py). UTF-8 detection and filename
 exclusions are not comprehensive secret detection.
 
-Multi-component repositories, repositories over 2,000 lines or over 40 files use
+Prompt-mode audits always use progressive component flyovers. Structured-mode
+audits of multi-component repositories, repositories over 2,000 lines or over 40 files use
 progressive component flyovers. All selected files belong to an area, with no global
 eight-area cap. Components are analyzed in pages of up to 30 files. Each completed
 page is saved, and later runs resume pending pages. A page's model analysis still
 samples source; indexing completeness is distinct from architectural understanding.
-Small single-component repositories retain the lightweight flyover.
+Small single-component repositories in structured mode retain the lightweight flyover.
 
-Focused review uses bounded source batches and up to three retrieval rounds. The
+Default prompt-mode reviews use bounded source batches per file and automatically
+selected related source excerpts. Responses are saved verbatim, without automatic
+citation validation or a separate verification pass. Larger files receive a final
+consolidation pass; original responses remain available.
+
+Structured review uses bounded source batches and up to three retrieval rounds. The
 model can request chunks, original line locations, or searches across the complete
 index. Search ranks paths, literal text and whole identifiers, splits camelCase and
 snake_case identifiers into fragments, and weights rarer terms more heavily.

@@ -123,7 +123,7 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
         report["request_budget"] = {k: getattr(provider, k, None) for k in
                                     ("context_window", "bytes_per_token", "token_margin", "max_tokens",
-                                     "max_input_chars", "max_estimated_input_tokens", "budget_adjustments")}
+                                     "max_input_chars", "max_estimated_input_tokens", "budget_adjustments", "server_input_chars", "context_overflows")}
         report['performance'] = performance_summary(snapshot(provider), performance_before)
         report['performance']['elapsed_seconds'] = time.monotonic() - started
         if checkpoint:

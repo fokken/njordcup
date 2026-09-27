@@ -46,11 +46,6 @@ supported as `app.py`. Expected CWEs are scored per fixture, not per location;
 false negatives include missing expected CWEs in incomplete cases. No fixture code
 is executed. The default evaluation budget is 100 calls shared across all cases.
 
-## Related guides
-
-- [Resource planning and benchmarks](resource-planning.md)
-- [Architecture and limitations](architecture.md)
-
 Free-form output tests exercise JSON API envelopes containing arbitrary text, verbatim
 Unicode/Markdown preservation, cache round trips, truncated checkpoints, failed
 resumption, SARIF non-promotion, and both HTML report workflows.
@@ -76,3 +71,13 @@ Incremental tests verify file reuse within a changed component, persistence thro
 a separate flyover, dependency/reference invalidation, added/removed scope and forced
 reruns. Performance tests cover retries, cache accounting, phase separation and missing
 token-usage metadata. These use mocked model responses, not live-model benchmarks.
+
+Overflow tests inject explicit HTTP context errors and verify bounded recovery,
+unchanged target coverage, synthesis repartitioning, call limits and incomplete
+single chunks. Regression tests also cover parser-profile invalidation in mapping,
+structured flyovers and explicit area selection, and overlapping file analyses.
+
+## Related guides
+
+- [Resource planning and benchmarks](resource-planning.md)
+- [Architecture and limitations](architecture.md)

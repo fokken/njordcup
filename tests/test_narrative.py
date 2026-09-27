@@ -145,7 +145,7 @@ class NarrativeTests(unittest.TestCase):
         self.assertEqual(len(result['file_analysis']), 3)
         self.assertTrue(all(a['complete'] for a in result['file_analysis']))
         self.assertEqual(result['file_analysis'][0]['text'], 'File analysis: a.txt')
-        self.assertIn('Empty file', result['file_analysis'][2]['note'])
+        self.assertIn('No source chunks selected', result['file_analysis'][2]['note'])
         with patch.object(p, '_request') as request:
             resumed = review(sources, list(sources), [], p, previous=result)
         request.assert_not_called()

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from njordcup.cli import main
 from njordcup.flyover import flyover
+from njordcup.index import build_index
 from njordcup.memory import area_progress, record_review, review_context, summarize
 from test_flyover import OVERVIEW, Provider
 from test_review import FINDING
@@ -27,7 +28,8 @@ class MemoryTests(unittest.TestCase):
         self.path = self.root / ".njordcup" / "memory.json"
         self.sources = {"app.py": "route()"}
         (self.root / "app.py").write_text("route()")
-        self.memory, _ = flyover(self.sources, ["app.py"], Provider(), self.path)
+        self.memory, _ = flyover(self.sources, ["app.py"], Provider(), self.path,
+                                 repository_index=build_index(self.sources, ['app.py']))
 
     def test_attempts_persist_and_latest_attempt_sets_progress(self):
         record_review(self.path, self.memory, 1, result("incomplete", [FINDING]))
