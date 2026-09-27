@@ -83,6 +83,43 @@ reducing input budgets to leave room. Explicit input-overflow errors trigger bou
 recovery; an unfit single chunk remains incomplete. See [context budgeting](configuration.md#adaptive-context-budgeting)
 and [troubleshooting](logging.md#diagnosing-reviewerror) for adjustments.
 
+## Direct security audit
+
+Use `--audit-only` to build the local index and component map, then immediately
+review all selected files without a model-based architectural flyover or area menu:
+
+```sh
+python3 -m njordcup /path/to/repo --audit-only --workers 2 \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --context-window 32768 --max-tokens 4096 --max-input-chars 24000 \
+  --batch-chars 10000 --context-chars 6000
+```
+
+Choose context budgets that match your server using the table above. You can also
+replace `--automatic` with `--audit-only` in any of those commands. Source filters
+(`--include`, `--exclude`, `--base`), output modes, workers, call/time budgets,
+per-file consolidation, checkpoint resumption and reports work as usual. Re-run
+the same command to resume, or add `--rerun` to repeat completed reviews.
+
+| Mode | Architectural model calls | Security review |
+| --- | --- | --- |
+| Default interactive run | Flyover | Choose an area |
+| `--automatic` | Flyover, reusing compatible completed pages | All pending source areas |
+| `--audit-only` | None | All pending source areas |
+
+Direct audits still use related source excerpts and any compatible architectural
+or implementation context already saved. On a fresh audit, that architectural
+context is absent. It skips the initial overview calls; it does not change the
+security prompt or add a cross-file review pass. `--audit-only` cannot be combined
+with other action selectors such as `--area`, `--flyover-only`, implementation
+analysis or SARIF investigation.
+
+Memory and summaries record `audit_mode: "direct"`. Unanalyzed architectural pages
+remain pending in flyover coverage, but do not by themselves make the direct audit
+incomplete. Source gaps and unfinished consolidation still do. Run `--automatic`
+later to add the architectural flyover while retaining compatible completed source
+reviews. Generate the HTML report with the usual `--report` command.
+
 ## Other workflows
 
 ```sh
@@ -107,7 +144,7 @@ python3 -m njordcup /path/to/repo --summary
 ```
 
 Interactive reviews save after every completed batch and return to the area menu.
-Non-interactive runs stop after the flyover unless `--area`, `--automatic`, or `--investigate-all`
+Non-interactive runs stop after the flyover unless `--area`, `--automatic`, `--audit-only`, or `--investigate-all`
 explicitly authorizes investigation. `--dry-run` previews eligible paths without
 model calls or writing the index.
 

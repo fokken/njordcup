@@ -88,6 +88,7 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--sarif", type=Path, help="Import SARIF 2.1.0 scanner results as investigations")
     parser.add_argument("--investigate-all", action="store_true", help="Investigate every result in the imported SARIF scan, resuming unfinished work")
     parser.add_argument("--automatic", "--auto", action="store_true", help="Audit all mapped source components without prompts; resume completed work")
+    parser.add_argument("--audit-only", action="store_true", help="Audit all selected files without a model-based architectural flyover; resume completed work")
     parser.add_argument("--implementation-analysis", action="store_true", help="Describe implementation and functionality in a separate saved result")
     parser.add_argument("--implementation-report", action="store_true", help="Generate an offline HTML report of saved implementation analysis")
     parser.add_argument("--implementation-file", type=Path, help="Implementation-analysis result to save or reuse")
@@ -112,6 +113,7 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--log-file", type=Path, help="Append runtime logs and stderr notifications to a text file as well as the terminal")
     invocation_started = time.monotonic()
     args = parser.parse_args(argv)
+    args.automatic = args.automatic or args.audit_only
     logging.getLogger("njordcup").setLevel(logging.DEBUG if args.verbose else logging.WARNING if args.quiet else logging.INFO)
     if args.max_seconds:
         control.deadline = time.monotonic() + args.max_seconds
@@ -127,7 +129,7 @@ def run(argv, control, attach_log=None):
     if args.investigate_all and (args.area or args.flyover_only or args.summary or args.dry_run or args.index_only):
         parser.error("--investigate-all cannot be combined with other action selectors")
     if args.automatic and (args.area or args.flyover_only or args.summary or args.report or args.dry_run or args.index_only or args.investigate_all or args.sarif):
-        parser.error("--automatic cannot be combined with other action selectors or --sarif")
+        parser.error("--automatic/--audit-only cannot be combined with other action selectors or --sarif")
     if args.report and (args.area or args.flyover_only or args.summary or args.refresh_memory or args.dry_run or args.index_only or args.investigate_all or args.sarif):
         parser.error("--report cannot be combined with audit actions")
     if args.implementation_analysis and (args.automatic or args.report or args.area or args.summary or args.flyover_only or args.dry_run or args.index_only or args.investigate_all or args.sarif):
@@ -277,9 +279,14 @@ def run(argv, control, attach_log=None):
                 elif args.sarif or args.automatic:
                     from .mapping import hierarchical_flyover
                     memory, reused = hierarchical_flyover(sources, targets, provider, memory_path, repository_index,
-                                                         args.refresh_memory, analyze=args.automatic, implementation=implementation)
+                                                         args.refresh_memory, analyze=args.automatic and not args.audit_only, implementation=implementation)
                 else:
                     memory, reused = flyover(sources, targets, provider, memory_path, args.refresh_memory, repository_index, implementation=implementation)
+                if args.automatic:
+                    memory['audit_mode'] = 'direct' if args.audit_only else 'mapped'
+                    save_memory(memory_path, memory)
+                    if args.audit_only:
+                        log.info('Direct security audit: architectural model calls skipped; saved compatible context remains available')
                 if args.sarif:
                     log.info("Importing SARIF results")
                     scan = load_sarif(args.sarif, root, sources)
@@ -392,7 +399,7 @@ def run(argv, control, attach_log=None):
                               "suggested_areas": [{"id": i, **a} for i, a in enumerate(areas, 1)],
                               "coverage": memory.get("coverage", {}), "skipped": skipped,
                               "next_step": "Run again with the same settings and --area NUMBER to approve a focused review"}
-                    if memory.get("mapping_errors"):
+                    if memory.get("mapping_errors") and not args.audit_only:
                         report.update(status="incomplete", errors=memory["mapping_errors"],
                                       next_step="Rerun --flyover-only to finish architectural analysis")
                 elif len(session_reviews) > 1:
@@ -418,12 +425,13 @@ def run(argv, control, attach_log=None):
                     report["findings"] = list({f["id"]: f for i in queue_ids
                                                for f in latest.get(i, {}).get("findings", [])}.values())
                     incomplete = ((args.investigate_all and report["sarif"]["counts"]["inconclusive"]) or stopped or
-                                  (args.automatic and memory.get("coverage", {}).get("pages_pending")) or
+                                  (args.automatic and not args.audit_only and memory.get("coverage", {}).get("pages_pending")) or
                                   any(a["status"] != "complete" for a in report["area_progress"]
                                       if a["id"] in queue_ids))
                     report["status"] = "incomplete" if incomplete else "complete"
                     report.pop("next_step", None)
                 report["implementation_analysis"] = {"reused": bool(implementation), "path": str(implementation_path)}
+                report['audit_mode'] = memory.get('audit_mode', 'mapped')
                 report["max_request_chars"] = getattr(provider, "max_request_chars", 0)
                 report["index_stats"] = repository_index["stats"]
                 report["memory_path"] = str(memory_path)

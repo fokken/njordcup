@@ -68,6 +68,10 @@ Coverage records processing progress, not a guarantee that reviewed code is secu
 
 ## Audit summaries
 
+For `--audit-only`, memory records `audit_mode: "direct"`. Pending architectural
+pages remain visible in flyover coverage but do not block audit completion;
+source review, consolidation and scanner completeness checks still apply.
+
 ```sh
 python3 -m njordcup /path/to/repo --summary
 python3 -m njordcup /path/to/repo --summary --output audit-summary.json

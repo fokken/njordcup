@@ -2,6 +2,34 @@
 
 [Back to README](../README.md)
 
+## SARIF-only audit
+
+Use `--sarif FILE --investigate-all` to investigate every supplied scanner result
+without running a general source audit or an architectural model flyover:
+
+```sh
+python3 -m njordcup /path/to/repo \
+  --sarif /path/to/results.sarif --investigate-all \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1 \
+  --output-mode json_schema
+```
+
+Njordcup still indexes eligible repository source locally so it can resolve scanner
+locations and retrieve related code. The review queue contains the imported scan's
+investigation groups; other source components are not queued for a general audit.
+Source/context limits still apply, so investigating every result does not guarantee
+that every flow or dependency is fully examined. Missing evidence stays inconclusive.
+
+Do not combine this action with `--automatic` or `--audit-only`. Use the same
+context-budget flags as a normal review, and keep related modules inside any source
+filters. SARIF investigations remain sequential even with `--workers`.
+
+For prose-only investigations, change the output mode to `prompt`; every result is
+still included, but machine-readable verdicts remain inconclusive and all-results
+mode returns `2`. For structured verdicts, the model must produce the required JSON.
+
+## Import and investigate
+
 For structured, evidence-checked dispositions, select a structured output mode:
 
 ```sh

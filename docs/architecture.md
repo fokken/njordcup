@@ -12,6 +12,7 @@ flowchart TD
     A[Repository] --> B[Local index and component map]
     B --> C[Architectural flyover]
     C --> D[Selected areas or automatic queue]
+    B -->|audit-only| D
     D --> E[Review each file in bounded batches]
     E --> F[Save original responses and coverage]
     F --> G[Consolidate multiple responses per file]
@@ -110,6 +111,11 @@ Completed coverage means code was processed, not that it is secure. See
 [report synthesis](reporting.md#optional-ai-executive-summary) and
 [memory and resumption](memory.md) for details.
 
+With [`--audit-only`](getting-started.md#direct-security-audit), the flow skips
+architectural model calls and proceeds from the local component map to automatic
+security reviews. Compatible saved context can still be reused. Pending architectural
+pages remain visible but do not block completion of this direct audit mode.
+
 ## Indexing and retrieval details
 
 The local index inventories every eligible file and line before model analysis.
@@ -138,7 +144,7 @@ lockfiles, SARIF artifacts and symlinks are excluded. Additional filters are def
 in [njordcup/repository.py](../njordcup/repository.py). UTF-8 detection and filename
 exclusions are not comprehensive secret detection.
 
-Prompt-mode audits always use progressive component flyovers. Structured-mode
+Prompt-mode architectural flyovers use progressive component mapping. Structured-mode
 audits of multi-component repositories, repositories over 2,000 lines or over 40 files use
 progressive component flyovers. All selected files belong to an area, with no global
 eight-area cap. Components are analyzed in pages of up to 30 files. Each completed

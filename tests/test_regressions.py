@@ -23,6 +23,24 @@ from test_scale import AutomaticProvider, make_assessment
 
 
 class RegressionTests(unittest.TestCase):
+    def test_local_map_replaces_legacy_suggested_areas(self):
+        sources = {'app.py': 'safe()'}
+        index = build_index(sources, list(sources))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'memory.json'
+            old, _ = flyover(sources, list(sources), AutomaticProvider(), path, repository_index=index)
+            self.assertEqual(old['version'], 1)
+            # A legacy snapshot may contain optional index metadata, but its areas
+            # are still suggestions rather than a complete local component map.
+            old['index_snapshot'] = {'parser_profile': index['parser_profile']}
+            path.write_text(json.dumps(old))
+            provider = AutomaticProvider()
+            mapped, reused = hierarchical_flyover(sources, list(sources), provider, path, index, analyze=False)
+            self.assertFalse(reused)
+            self.assertEqual(mapped['version'], 2)
+            self.assertTrue(all('component' in a for a in mapped['overview']['areas']))
+            self.assertEqual(provider.calls, 0)
+
     def test_parser_change_invalidates_saved_reviews_and_archives_scan(self):
         sources = {'app.py': 'safe()'}
         index = build_index(sources, list(sources))

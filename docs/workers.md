@@ -17,6 +17,8 @@ Use your server's actual context limit; other starting budgets are in the
 [context quick start](getting-started.md#quick-start-by-context-size). `--workers`
 also applies to interactive and `--area` source reviews and to explicit structured
 output modes. All workers use the same configured endpoint and model.
+Replace `--automatic` with `--audit-only` to skip architectural model calls and
+start the security review after local indexing.
 
 ## Scheduling and context
 

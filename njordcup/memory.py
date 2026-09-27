@@ -104,7 +104,9 @@ def summarize(memory):
     scanner = scan_summary(memory)
     from .file_analysis import merge_files
     file_analysis = merge_files((i, a["report"]) for i, a in latest.items())
-    return {"status": "summary", "audit_status": "complete" if progress and counts["complete"] == len(progress) and not memory.get("coverage", {}).get("pages_pending") and not (scanner and scanner["counts"]["inconclusive"]) else "in_progress",
+    mapping_pending = memory.get('audit_mode') != 'direct' and memory.get('coverage', {}).get('pages_pending')
+    return {"status": "summary", "audit_status": "complete" if progress and counts["complete"] == len(progress) and not mapping_pending and not (scanner and scanner["counts"]["inconclusive"]) else "in_progress",
+            'audit_mode': memory.get('audit_mode', 'mapped'),
             "summary": memory["overview"]["summary"], "tech_stack": memory["overview"]["tech_stack"],
             "snapshot_fingerprint": memory["fingerprint"],
             "snapshot_note": "Saved snapshot only; current filesystem contents have not been checked. Completion covers suggested areas, not the entire repository.",

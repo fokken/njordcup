@@ -18,7 +18,7 @@ def hierarchical_flyover(sources, targets, provider, path, index, refresh=False,
     old = json.loads(path.read_text()) if path.is_file() else {}
     mode_matches = old.get("index_mode", "auto") == index.get("index_mode", "auto")
     profile_matches = old.get("index_snapshot", {}).get("parser_profile") == index.get("parser_profile")
-    if not analyze and not refresh and mode_matches and profile_matches and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
+    if old.get('version') == 2 and not analyze and not refresh and mode_matches and profile_matches and old.get("fingerprint") == fingerprint(sources, targets) and old.get("provider") == provider_identity(provider):
         log.info("Reusing saved component map")
         return old, True
     compatible = old.get("version") == 2 and old.get("provider") == provider_identity(provider) and not refresh and mode_matches
