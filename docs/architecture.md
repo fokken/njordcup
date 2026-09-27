@@ -2,6 +2,114 @@
 
 [Back to README](../README.md)
 
+## Flow description
+
+In the default `--output-mode prompt`, njordcup reviews code file by file,
+consolidates responses for each file, and optionally summarizes the saved audit.
+
+```mermaid
+flowchart TD
+    A[Repository] --> B[Local index and component map]
+    B --> C[Architectural flyover]
+    C --> D[Selected areas or automatic queue]
+    D --> E[Review each file in bounded batches]
+    E --> F[Save original responses and coverage]
+    F --> G[Consolidate multiple responses per file]
+    G --> H[HTML report containing current analyses]
+    H --> I[Optional AI executive summary]
+```
+
+### 1. Index and map the repository
+
+Eligible files are indexed locally with original line numbers, bounded chunks and
+available symbol/import/call information. Dependency manifests and directories help
+group files into components. The architectural flyover samples components in pages
+of up to 30 files and saves descriptions for later review context. Sampling does
+not count as a completed security review. Compatible implementation-analysis results
+can supply architectural descriptions without repeating those mapping calls.
+
+### 2. Review files within selected areas
+
+An area defines a collection of target files. Select an area interactively or with
+`--area`; `--automatic` processes unfinished component areas sequentially. Within
+each area, every source-review request targets chunks from **one file**. A small
+file may need one request, while a large file requires several bounded batches.
+
+Requests may also contain bounded excerpts from related files, architectural
+memory, previous analyses and compatible implementation descriptions. The model
+is asked to describe potential issues using **Title, Description, Impact and
+Remediation**, with source evidence, preconditions and uncertainty. Its response is
+saved verbatim, with chunk coverage, after each batch. Headings are instructions
+for the model, not a required output format.
+
+Related files provide context, but there is currently no dedicated whole-component
+security pass that systematically follows every interaction between files. Prompt
+mode also has no model-directed retrieval loop or separate finding-verification
+pass. Explicit structured modes add those steps, as described below.
+
+### 3. Consolidate each file's responses
+
+A file with one response uses that text as its analysis. When a file has multiple
+responses, an additional model pass combines them once its source review is
+complete. The prompt asks the model to preserve distinct issues, source references,
+evidence, uncertainty and contradictions, and merge observations only when they
+describe the same issue.
+
+If the combined input is too large, njordcup splits the serialized analyses into
+bounded text fragments, summarizes each, then combines summaries in successive
+pairwise passes. Fragments can divide records; they do not necessarily align with
+issue boundaries. This process can lose detail, so original responses remain saved
+and appear under **Original analysis parts** in the HTML report.
+
+Consolidation uses saved analyses; it does not review additional source code.
+Responses are checkpointed for resumption. Pending consolidation leaves the file
+analysis incomplete even when all source chunks have been processed. An interrupted
+review reuses compatible completed chunks and consolidation checkpoints.
+
+### 4. Combine areas into the current report
+
+Reports use the latest saved attempt for each area in the active snapshot. Older
+attempts and archived snapshots remain in memory but are excluded from the current
+report. Files appearing in several areas receive one report entry containing their
+unique response parts, retaining area provenance.
+
+A saved file consolidation is reused only if it covers that exact set of parts.
+Otherwise the report retains the separate parts and marks consolidation pending.
+Offline reporting does not run a new cross-area consolidation. Grouping identical
+response IDs removes repeated copies of the same response; it does not semantically
+deduplicate similar vulnerability claims in different responses.
+
+### 5. Summarize the saved audit
+
+| Command | Behavior |
+| --- | --- |
+| `--summary` | Offline JSON aggregation of saved progress, analyses, coverage and limitations |
+| `--report` | Offline HTML report with current analyses and any matching saved executive summary |
+| `--report --synthesize` | Model-generated executive summary of the saved security audit, included in HTML |
+
+```sh
+python3 -m njordcup /path/to/repo --report --synthesize \
+  --model YOUR_MODEL --base-url http://localhost:11434/v1
+```
+
+The executive summary connects observations, prioritizes potential issues and
+describes uncertainty and coverage gaps. It uses the same bounded summarization
+process and retains original analyses below the summary. It performs no new source
+review and does not change findings, scanner dispositions or coverage. Matching
+completed synthesis is reused; changed input invalidates the old summary.
+
+Implementation analysis is stored separately and remains component-based. Use
+`--implementation-report --synthesize` with model settings for its own executive
+summary. SARIF investigations cover reported source regions, not every line of
+the affected files; prompt-mode scanner verdicts remain inconclusive.
+
+Completed coverage means code was processed, not that it is secure. See
+[per-file reporting](reporting.md#one-security-analysis-per-file),
+[report synthesis](reporting.md#optional-ai-executive-summary) and
+[memory and resumption](memory.md) for details.
+
+## Indexing and retrieval details
+
 The local index inventories every eligible file and line before model analysis.
 Discovery is language agnostic: any UTF-8 text file is eligible, including unknown
 extensions, extensionless scripts, documentation and configuration. No language

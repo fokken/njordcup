@@ -2,6 +2,9 @@
 
 [Back to README](../README.md)
 
+The [review flow description](architecture.md#flow-description) explains how source
+batches become per-file analyses and how those analyses feed the report.
+
 For a separate implementation/functionality report, use `--implementation-report`
 ([implementation analysis guide](implementation-analysis.md#html-implementation-report)).
 

@@ -5,6 +5,9 @@
 Run from this checkout, or install with `pip install -e .` for the `njordcup` command.
 Replace `YOUR_MODEL` with a model served by your endpoint.
 
+See the [review flow description](architecture.md#flow-description) for how files
+are grouped, reviewed, consolidated and summarized.
+
 ## Quick start by context size
 
 Choose the row matching the context window **configured on your inference server**.
