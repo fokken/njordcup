@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import threading
 from uuid import uuid4
 
 from .errors import ReviewError
@@ -13,10 +14,15 @@ class TraceLog:
     def __init__(self, path):
         self.path = Path(path)
         self.session_id = uuid4().hex
+        self._lock = threading.Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.write('session_start')
 
     def write(self, event, **fields):
+        with self._lock:
+            self._write(event, **fields)
+
+    def _write(self, event, **fields):
         record = {'trace_format': 'njordcup/1', 'session_id': self.session_id,
                   'time': datetime.now(timezone.utc).isoformat(), 'event': event, **fields}
         try:

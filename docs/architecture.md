@@ -32,7 +32,9 @@ can supply architectural descriptions without repeating those mapping calls.
 
 An area defines a collection of target files. Select an area interactively or with
 `--area`; `--automatic` processes unfinished component areas sequentially. Within
-each area, every source-review request targets chunks from **one file**. A small
+an area, `--workers N` can review N files concurrently (default: 1); see
+[worker scheduling and checkpoints](workers.md). Every source-review request
+targets chunks from **one file**. A small
 file may need one request, while a large file requires several bounded batches.
 
 Requests may also contain bounded excerpts from related files, architectural

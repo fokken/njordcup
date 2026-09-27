@@ -32,7 +32,8 @@ Budget roughly **4 GB RAM and two CPU cores for the njordcup controller** as an
 initial deployment allowance, excluding inference and growing audit archives.
 This is headroom, not a measured hard requirement. Model RAM/VRAM depends on model
 weights, precision, architecture, KV-cache length and concurrency; repository line
-count alone cannot specify it. Calls currently run sequentially.
+count alone cannot specify it. Calls run sequentially by default; optional
+[file workers](workers.md) increase concurrency and may increase inference memory use.
 
 Synthetic Linux indexing measurements in this development environment:
 

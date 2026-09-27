@@ -69,6 +69,7 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--api-key-env", default=os.getenv("REVIEW_API_KEY_ENV", "OPENAI_API_KEY"))
     parser.add_argument("--output-mode", choices=["json_schema", "json_object", "prompt"], default=os.getenv("REVIEW_OUTPUT_MODE", "prompt"), help="Model response format (default: prompt; accepts free-form text)")
     parser.add_argument("--max-calls", type=nonnegative, default=0, help="API attempt limit per invocation; 0 means unlimited (default)")
+    parser.add_argument("--workers", type=positive, default=1, help="Concurrent files within a source review area (default: 1); other phases remain sequential")
     parser.add_argument("--request-timeout", type=duration, default=120, help="Socket I/O timeout in seconds per attempt")
     parser.add_argument("--max-retries", type=nonnegative, default=2, help="Transient retries per call; each attempt counts toward --max-calls")
     parser.add_argument("--retry-base", type=duration, default=1, help="Initial retry backoff in seconds")
@@ -369,7 +370,8 @@ def run(argv, control, attach_log=None):
                         context["implementation_analysis"] = implementation_context
                     report = review(sources, scoped, skipped, provider, args.batch_chars, args.context_chars, context,
                                     repository_index=repository_index, context_rounds=args.context_rounds, previous=prior,
-                                    checkpoint=checkpoint, seeds=area.get("sarif_candidates"), code_lookup=code_lookup)
+                                    checkpoint=checkpoint, seeds=area.get("sarif_candidates"), code_lookup=code_lookup,
+                                    workers=args.workers)
                     report["selected_area"] = {"id": selected, **area}
                     report["usage"] = {k: getattr(provider, k, 0) - value for k, value in before.items()}
                     attempt = record_review(memory_path, memory, selected, report, attempt_id)

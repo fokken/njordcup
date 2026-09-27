@@ -44,7 +44,9 @@ prose alone do not invalidate otherwise matching source checkpoints. Use
 Prior snapshots move into `archives`. The menu and summary use the latest attempt
 for each current area; bounded prior-review summaries are supplied as context.
 Memory contains sensitive code excerpts and findings. Use a private directory and
-one writer per memory file; concurrent writers are not supported. Archives are
+one process per memory file; concurrent processes writing it are not supported.
+With `--workers`, one coordinator persists all worker checkpoints; see
+[concurrent file reviews](workers.md). Archives are
 retained indefinitely, so storage requirements grow with audit history.
 
 ## Saved coverage

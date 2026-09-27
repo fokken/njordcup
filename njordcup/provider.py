@@ -21,6 +21,7 @@ import logging
 import time
 from uuid import uuid4
 import base64
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +93,9 @@ class OpenAIProvider:
         self.http_seconds = 0.0
         self.responses_with_usage = self.responses_without_usage = 0
         self.performance = {}
+        self._state_lock = threading.RLock()
+        self._parent = None
+        self._request_gate = None
         self.server_input_chars = None
         self.context_overflows = 0
         if request_timeout <= 0 or max_retries < 0 or retry_base <= 0 or retry_max_delay <= 0:
@@ -107,6 +111,32 @@ class OpenAIProvider:
         self.max_estimated_input_tokens = self.budget_adjustments = 0
         from .tracing import TraceLog
         self.trace = TraceLog(trace_file) if trace_file else None
+
+    def fork(self, gate):
+        """Private per-file counters, shared transport budget/control/trace/cache."""
+        from copy import copy
+        child = copy(self)
+        child._parent = self
+        child._request_gate = gate
+        for name in ('calls', 'cache_hits', 'input_tokens', 'output_tokens', 'retries',
+                     'http_seconds', 'responses_with_usage', 'responses_without_usage',
+                     'context_overflows', 'budget_adjustments', 'max_request_chars', 'max_estimated_input_tokens'):
+            setattr(child, name, 0)
+        child.performance = {}
+        return child
+
+    def reserve_attempt(self):
+        owner = self._parent or self
+        with owner._state_lock:
+            self.control.check()
+            if self._request_gate:
+                self._request_gate.check()
+            if owner.max_calls and owner.calls >= owner.max_calls:
+                raise RunStopped('call_budget', 'API call budget exhausted (including retry attempts)')
+            owner.calls += 1
+            if self._parent:
+                self.calls += 1
+            return owner.calls
 
     def trace_event(self, event, **fields):
         if self.trace:
@@ -141,6 +171,10 @@ class OpenAIProvider:
         return len(text), math.ceil(len(text.encode("utf-8")) / self.bytes_per_token)
 
     def fits(self, instructions, payload, schema):
+        if self._parent:
+            with self._parent._state_lock:
+                caps = [c for c in (self.server_input_chars, self._parent.server_input_chars) if c is not None]
+                self.server_input_chars = min(caps) if caps else None
         chars, tokens = self.request_size(self.request_body(instructions, payload, schema))
         return chars <= min(self.max_input_chars, self.server_input_chars or self.max_input_chars) and (self.context_window is None or
                tokens + self.max_tokens + self.token_margin <= self.context_window)
@@ -171,8 +205,11 @@ class OpenAIProvider:
                  'responses_with_usage': 'responses_with_usage', 'responses_without_usage': 'responses_without_usage',
                  'context_overflows': 'context_overflows'}
         before = {k: getattr(self, attr) for k, attr in names.items()}
+        adjustments_before = self.budget_adjustments
         started, failed = time.monotonic(), False
         try:
+            if self._request_gate:
+                self._request_gate.check()
             # Retry only a smaller request. This limit is separate from transient
             # transport retries; every network attempt still counts toward max_calls.
             for recovery in range(4):
@@ -182,6 +219,10 @@ class OpenAIProvider:
                     self.context_overflows += 1
                     chars, _ = self.request_size(self.request_body(instructions, payload, schema))
                     self.server_input_chars = min(self.server_input_chars or chars, max(1, int(chars * 0.75)))
+                    if self._parent:
+                        with self._parent._state_lock:
+                            self._parent.server_input_chars = min(self._parent.server_input_chars or self.server_input_chars,
+                                                                 self.server_input_chars)
                     log.warning('Server context overflow; reducing invocation input cap to %d characters (recovery %d/3)',
                                 self.server_input_chars, min(recovery + 1, 3))
                     if recovery == 3:
@@ -189,16 +230,32 @@ class OpenAIProvider:
                     # fit_payload trims only optional context/sampled flyover material;
                     # mandatory input failures return to the review batch splitter.
                     self.fit_payload(instructions, payload, schema)
-        except BaseException:
+        except BaseException as exc:
             failed = True
+            if isinstance(exc, RunStopped) and self._request_gate:
+                self._request_gate.stop(exc.reason)
             raise
         finally:
-            row = self.performance.setdefault(phase, {k: 0 for k in COUNTERS})
-            row['requests'] += 1
-            row['failures'] += int(failed)
-            row['elapsed_seconds'] += time.monotonic() - started
+            delta = {k: 0 for k in COUNTERS}
+            delta['requests'] = 1
+            delta['failures'] = int(failed)
+            delta['elapsed_seconds'] = time.monotonic() - started
             for key, attr in names.items():
-                row[key] += getattr(self, attr) - before[key]
+                delta[key] = getattr(self, attr) - before[key]
+            row = self.performance.setdefault(phase, {k: 0 for k in COUNTERS})
+            for key in COUNTERS:
+                row[key] += delta[key]
+            if self._parent:
+                with self._parent._state_lock:
+                    total = self._parent.performance.setdefault(phase, {k: 0 for k in COUNTERS})
+                    for key in COUNTERS:
+                        total[key] += delta[key]
+                    for key, attr in names.items():
+                        if attr != 'calls':  # Attempts are reserved before sending.
+                            setattr(self._parent, attr, getattr(self._parent, attr) + delta[key])
+                    self._parent.budget_adjustments += self.budget_adjustments - adjustments_before
+                    for attr in ('max_request_chars', 'max_estimated_input_tokens'):
+                        setattr(self._parent, attr, max(getattr(self._parent, attr), getattr(self, attr)))
 
     def _ask(self, instructions, payload, schema):
         self.control.check()
@@ -297,19 +354,16 @@ class OpenAIProvider:
 
     def _request(self, request):
         for attempt in range(self.max_retries + 1):
-            self.control.check()
-            if self.max_calls and self.calls >= self.max_calls:
-                raise RunStopped("call_budget", "API call budget exhausted (including retry attempts)")
-            self.calls += 1
+            call_number = self.reserve_attempt()
             if attempt:
                 self.retries += 1
             retry_after = None
             started = time.monotonic()
             request_id = uuid4().hex
             if self.trace:
-                self.trace_event('request', request_id=request_id, call=self.calls, attempt=attempt + 1,
+                self.trace_event('request', request_id=request_id, call=call_number, attempt=attempt + 1,
                                  body=json.loads(request.data))
-            log.info("Model request %d/%s started (attempt %d, I/O timeout %.1fs)", self.calls, self.max_calls or "unlimited", attempt + 1, self.request_timeout)
+            log.info("Model request %d/%s started (attempt %d, I/O timeout %.1fs)", call_number, self.max_calls or "unlimited", attempt + 1, self.request_timeout)
             chunks = []
             try:
                 with urllib.request.build_opener(NoRedirect()).open(request, timeout=self.control.timeout(self.request_timeout)) as response:
@@ -325,7 +379,7 @@ class OpenAIProvider:
                                         elapsed_seconds=time.monotonic() - started, complete=True)
                     result = json.loads(raw)
                 self.control.check()
-                log.info("Model request %d received in %.1fs", self.calls, time.monotonic() - started)
+                log.info("Model request %d received in %.1fs", call_number, time.monotonic() - started)
                 return result
             except urllib.error.HTTPError as exc:
                 retry_after = exc.headers.get("Retry-After") if exc.headers else None

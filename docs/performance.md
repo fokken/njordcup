@@ -54,3 +54,8 @@ speed. Missing token usage is recorded as `responses_without_usage`; throughput 
 null when no complete usage metadata is available. Mixed reporting gives only a
 partial token total. Cache hits do not add API attempts or token usage. These
 measurements are controller observations, not GPU utilization or hardware benchmarks.
+
+With [concurrent workers](workers.md), phase durations sum overlapping request times
+and may exceed wall-clock elapsed time. The phase token rate uses that summed time,
+not aggregate wall-clock throughput. Use the overall invocation or area's elapsed
+time to compare one worker against several under equivalent audit conditions.

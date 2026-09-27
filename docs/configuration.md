@@ -154,6 +154,7 @@ attempts; retry attempts do count toward `--max-calls`.
 | `--retry-base` | `1` | Initial exponential-backoff delay in seconds, with jitter |
 | `--retry-max-delay` | `30` | Maximum delay, including server `Retry-After` values |
 | `--max-seconds` | Unset | Cooperative deadline for the entire invocation |
+| `--workers` | `1` | Concurrent files within a source-review area; see [worker behavior](workers.md) |
 
 ```sh
 python3 -m njordcup /path/to/repo --sarif results.sarif --investigate-all \
@@ -179,7 +180,8 @@ repeat server work; token usage from responses that were not received is unknown
 
 Reports include `stop_reason`. Exit codes are `130` for Ctrl+C, `143` for SIGTERM,
 `124` for the time budget, and `2` for other incomplete/error stops. Re-run the same
-command to resume saved checkpoints. Execution remains sequential.
+command to resume saved checkpoints. Execution is sequential by default; `--workers N`
+enables concurrent file reviews with centrally coordinated checkpoints and shared limits.
 
 ## Provider references
 

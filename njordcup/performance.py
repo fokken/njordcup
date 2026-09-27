@@ -6,6 +6,10 @@ COUNTERS = ('requests', 'attempts', 'cache_hits', 'retries', 'input_tokens', 'ou
 
 
 def snapshot(provider):
+    lock = getattr(provider, '_state_lock', None)
+    if lock is not None:
+        with lock:
+            return deepcopy(provider.performance)
     return deepcopy(getattr(provider, 'performance', {}))
 
 
@@ -20,7 +24,7 @@ def summarize(current, previous=None):
         row['output_tokens_per_second'] = (row['output_tokens'] / row['elapsed_seconds']
                                            if row['responses_with_usage'] and row['elapsed_seconds'] else None)
         phases[name] = row
-    return {'phases': phases, 'note': 'Phase time includes input processing, retries and request overhead. Output throughput is end-to-end, not decoding speed; token counts depend on server usage metadata.'}
+    return {'phases': phases, 'note': 'Phase time sums request durations, including input processing, retries and overhead. Concurrent durations overlap; this is not wall-clock throughput or decoding speed. Token counts depend on server usage metadata.'}
 
 
 def log_performance(log, provider):

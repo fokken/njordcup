@@ -66,6 +66,8 @@ progress in `.njordcup/memory.json`. Re-run the same command to resume unfinishe
 work. Remove `--automatic` to choose areas interactively. Add `--log-file
 /path/outside/repo/njordcup.log` to retain runtime logs. Calls are unlimited by
 default; use `--max-calls` or `--max-seconds` for an optional run budget.
+Add `--workers 2` to try concurrent file reviews within each area; see
+[worker behavior and shared budgets](workers.md). The default is one worker.
 
 Generate the saved audit's HTML report and progress summary without model calls:
 

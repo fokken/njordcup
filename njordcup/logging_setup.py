@@ -4,6 +4,7 @@ import logging
 import sys
 import os
 import stat
+import threading
 
 from .errors import ReviewError
 
@@ -12,15 +13,18 @@ class TeeStderr:
     """Include ordinary CLI diagnostics and finding notifications, not just log records."""
     def __init__(self, console, file):
         self.console, self.file = console, file
+        self._lock = threading.RLock()
 
     def write(self, text):
-        self.file.write(text)
-        self.file.flush()
-        return self.console.write(text)
+        with self._lock:
+            self.file.write(text)
+            self.file.flush()
+            return self.console.write(text)
 
     def flush(self):
-        self.file.flush()
-        self.console.flush()
+        with self._lock:
+            self.file.flush()
+            self.console.flush()
 
     def __getattr__(self, name):
         return getattr(self.console, name)

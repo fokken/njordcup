@@ -36,7 +36,9 @@ An empty findings list is valid. Limit findings to the 10 strongest issues per b
 
 
 def review(sources, targets, skipped, provider, batch_chars=24000, context_chars=24000, overview=None,
-           repository_index=None, context_rounds=3, previous=None, checkpoint=None, seeds=None, code_lookup=None):
+           repository_index=None, context_rounds=3, previous=None, checkpoint=None, seeds=None, code_lookup=None, workers=1):
+    if type(workers) is not int or workers < 1:
+        raise ValueError('workers must be a positive integer')
     from .performance import snapshot, summarize as performance_summary
     started = time.monotonic()
     performance_before = snapshot(provider)
@@ -128,6 +130,50 @@ def review(sources, targets, skipped, provider, batch_chars=24000, context_chars
         report['performance']['elapsed_seconds'] = time.monotonic() - started
         if checkpoint:
             checkpoint(report)
+
+    if workers > 1 and not seeds:
+        from .workers import run_files
+        if not callable(getattr(provider, 'fork', None)):
+            raise ReviewError('This provider does not support concurrent file reviews')
+        report['workers'] = workers
+        finalize()
+        completed = {key for key, value in report['chunk_results'].items() if value['status'] == 'complete'}
+        pending_consolidations = {f['path'] for f in report.get('file_analysis', []) if not f['complete']}
+        paths = [p for p in targets if p in pending_consolidations or
+                 any(c['id'] not in completed for c in index['files'][p]['chunks'])]
+        # Freeze resume data; worker callbacks must never observe the mutable aggregate.
+        by_path = {}
+        for key, value in report['chunk_results'].items():
+            by_path.setdefault(value['path'], {})[key] = value
+        resumes = {p: {'review_signature': signature,
+                       'chunk_results': deepcopy(by_path.get(p, {})),
+                       'file_consolidations': {p: deepcopy(report['file_consolidations'][p])}
+                       if p in report['file_consolidations'] else {}} for p in paths}
+        latest = {}
+
+        def run_job(path, child, save):
+            return review(sources, [path], [], child, batch_chars, context_chars, overview,
+                          repository_index=index, context_rounds=context_rounds,
+                          previous=resumes.pop(path), checkpoint=save, code_lookup=lookup)
+
+        def update(path, partial):
+            latest[path] = partial
+            report['chunk_results'].update(partial['chunk_results'])
+            report['file_consolidations'].update(partial['file_consolidations'])
+            report['batch_splits'] = sum(r['batch_splits'] for r in latest.values())
+            report['errors'] = list(dict.fromkeys(e for r in latest.values() for e in r['errors']))
+            global_limits[:] = list(dict.fromkeys(e for r in latest.values() for e in r['limitations']))
+            if partial.get('stop_reason'):
+                report.setdefault('stop_reason', partial['stop_reason'])
+            finalize()
+
+        log.info('Reviewing %d pending files with up to %d workers', len(paths), workers)
+        reason = run_files(paths, workers, provider, run_job, update)
+        if reason:
+            report['stop_reason'] = reason
+            report['errors'].append('File review queue stopped: ' + reason)
+        finalize()
+        return report
 
     pending = [c for c in units if report['chunk_results'].get(c['id'], {}).get('status') != 'complete']
     log.info("Review scope: %d target chunks, %d resumed, %d pending", len(units), len(report["chunk_results"]), len(pending))

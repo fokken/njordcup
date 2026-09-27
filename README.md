@@ -49,6 +49,7 @@ either report command for a saved AI executive summary.
 - [Configuration](docs/configuration.md): providers, budgets, caching, and overflow recovery.
 - [Logging](docs/logging.md): progress, runtime logfiles, tracing, and troubleshooting.
 - [Performance](docs/performance.md): prompt efficiency and phase measurements.
+- [Concurrent workers](docs/workers.md): parallel file reviews, shared budgets, and resumption.
 - [Semgrep SARIF](docs/sarif.md): importing findings, investigating all results, and resuming.
 - [Implementation analysis](docs/implementation-analysis.md): saved implementation descriptions and security reuse.
 - [HTML reports](docs/reporting.md): formatted findings, evidence, and coverage.

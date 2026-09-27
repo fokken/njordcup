@@ -77,6 +77,11 @@ unchanged target coverage, synthesis repartitioning, call limits and incomplete
 single chunks. Regression tests also cover parser-profile invalidation in mapping,
 structured flyovers and explicit area selection, and overlapping file analyses.
 
+Worker tests exercise overlapping HTTP attempts, shared call/retry budgets,
+coordinator-only checkpoint callbacks, cancellation/deadlines, failed persistence,
+consolidation resumption, overflow recovery, trace integrity, cache accounting and
+the CLI report workflow. They use mocked transport, not live-model speed measurements.
+
 ## Related guides
 
 - [Resource planning and benchmarks](resource-planning.md)
