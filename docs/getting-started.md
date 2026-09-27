@@ -122,6 +122,11 @@ reviews. Generate the HTML report with the usual `--report` command.
 
 ## Other workflows
 
+For a model-prioritized security review of a limited number of files, use
+[`--quick-audit --quick-max-files N`](quick-audit.md) after generating a compatible
+quick implementation rundown. It keeps separate audit memory and labels its subset
+coverage explicitly.
+
 For a standalone overview instead of an audit, run
 `--quick-implementation-analysis --quick-max-files 50` with your model settings.
 It selects representative files and automatically writes one collective HTML

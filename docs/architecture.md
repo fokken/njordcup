@@ -118,6 +118,11 @@ pages remain visible but do not block completion of this direct audit mode.
 
 ## Indexing and retrieval details
 
+[`--quick-audit`](quick-audit.md) adds model-guided file selection using a saved
+quick rundown and the eligible inventory. It then runs the normal chunk-based
+security review on those targets, preserving the distinction between selected
+scope and the rest of the repository. It does not run an architectural flyover.
+
 The local index inventories every eligible file and line before model analysis.
 Discovery is language agnostic: any UTF-8 text file is eligible, including unknown
 extensions, extensionless scripts, documentation and configuration. No language

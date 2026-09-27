@@ -19,6 +19,8 @@ also applies to interactive and `--area` source reviews and to explicit structur
 output modes. All workers use the same configured endpoint and model.
 Replace `--automatic` with `--audit-only` to skip architectural model calls and
 start the security review after local indexing.
+Workers also apply to selected files in `--quick-audit`; its model-driven selection
+stage remains sequential and shares the same invocation call budget.
 
 ## Scheduling and context
 

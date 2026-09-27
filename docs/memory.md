@@ -71,6 +71,10 @@ Coverage records processing progress, not a guarantee that reviewed code is secu
 For `--audit-only`, memory records `audit_mode: "direct"`. Pending architectural
 pages remain visible in flyover coverage but do not block audit completion;
 source review, consolidation and scanner completeness checks still apply.
+Quick audits use `audit_mode: "quick"` and separate default memory at
+`.njordcup/quick-audit.json`. Their `quick_audit` metadata records the priority
+selection and bounded scope; completion refers only to those selected targets.
+See [quick-audit resumption](quick-audit.md#resuming-and-limits).
 
 ```sh
 python3 -m njordcup /path/to/repo --summary

@@ -24,6 +24,8 @@ are replaced atomically and created with private file permissions.
 The report emphasizes saved security analyses and area coverage, with processing status
 and outstanding limitations. It also includes any structured issue details and scanner
 dispositions. Finding totals and severity counters are not shown.
+For [quick audits](quick-audit.md), a prominent scope section identifies the
+prioritized subset, selected targets, omitted-file count and model selection reasons.
 Findings are deduplicated across areas using path, line, and CWE. As with `--summary`,
 current means the latest saved attempt per area in the active snapshot; archived
 snapshots and superseded attempts are excluded. The filesystem is not rescanned.

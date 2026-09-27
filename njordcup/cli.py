@@ -89,13 +89,14 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--investigate-all", action="store_true", help="Investigate every result in the imported SARIF scan, resuming unfinished work")
     parser.add_argument("--automatic", "--auto", action="store_true", help="Audit all mapped source components without prompts; resume completed work")
     parser.add_argument("--audit-only", action="store_true", help="Audit all selected files without a model-based architectural flyover; resume completed work")
+    parser.add_argument('--quick-audit', action='store_true', help='Use a saved quick rundown to select priority files, then audit them; separate default memory')
     parser.add_argument("--implementation-analysis", action="store_true", help="Describe implementation and functionality in a separate saved result")
     parser.add_argument("--implementation-report", action="store_true", help="Generate an offline HTML report of saved implementation analysis")
     parser.add_argument("--implementation-file", type=Path, help="Implementation-analysis result to save or reuse")
     parser.add_argument('--quick-implementation-analysis', action='store_true', help='Model-selected shallow codebase rundown with one collective report; separate from audits')
     parser.add_argument('--quick-implementation-report', action='store_true', help='Render saved quick implementation analysis as offline HTML')
     parser.add_argument('--quick-implementation-file', type=Path, help='Separate quick implementation result file')
-    parser.add_argument('--quick-max-files', type=positive, default=50, help='Maximum distinct files inspected by quick implementation analysis (default: 50)')
+    parser.add_argument('--quick-max-files', type=positive, default=50, help='Maximum selected files for quick implementation analysis or quick audit (default: 50)')
     parser.add_argument("--report", action="store_true", help="Generate an offline HTML report from saved memory")
     parser.add_argument("--synthesize", action="store_true", help="Generate or resume AI executive synthesis with --report or --implementation-report")
     parser.add_argument("--rerun", action="store_true", help="Start selected reviews afresh instead of resuming checkpoints")
@@ -117,6 +118,9 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--log-file", type=Path, help="Append runtime logs and stderr notifications to a text file as well as the terminal")
     invocation_started = time.monotonic()
     args = parser.parse_args(argv)
+    if args.quick_audit and (args.automatic or args.audit_only):
+        parser.error('--quick-audit is a separate action; do not combine it with --automatic or --audit-only')
+    args.audit_only = args.audit_only or args.quick_audit
     args.automatic = args.automatic or args.audit_only
     if args.quick_implementation_analysis or args.quick_implementation_report:
         if (args.quick_implementation_analysis and args.quick_implementation_report) or any((
@@ -180,7 +184,7 @@ def run(argv, control, attach_log=None):
         legacy_memory = root / ".security-review" / "memory.json"
         if not default_memory.exists() and legacy_memory.is_file():
             default_memory = legacy_memory
-        memory_path = (args.memory or default_memory).resolve()
+        memory_path = (args.memory or (root / '.njordcup' / 'quick-audit.json' if args.quick_audit else default_memory)).resolve()
         html_path = memory_path.with_name(memory_path.stem + ".report.html")
         if args.report and not args.output:
             args.output = html_path
@@ -195,9 +199,17 @@ def run(argv, control, attach_log=None):
         if args.output and args.output.resolve() == implementation_path and not args.implementation_analysis:
             raise ReviewError("--output must not overwrite saved implementation analysis")
         implementation_html_path = implementation_path.with_suffix(".html")
-        quick_path = (args.quick_implementation_file or memory_path.with_name(memory_path.stem + '.quick-implementation.json')).resolve()
+        rundown_base = default_memory if args.quick_audit else memory_path
+        quick_path = (args.quick_implementation_file or rundown_base.with_name(rundown_base.stem + '.quick-implementation.json')).resolve()
         quick_html_path = quick_path.with_suffix('.html')
         protected_results = {memory_path, index_path, html_path, implementation_path, implementation_html_path}
+        full_audit_artifacts = ([default_memory, default_memory.with_name(default_memory.stem + '.index.json'),
+                                 default_memory.with_name(default_memory.stem + '.report.html'),
+                                 default_memory.with_name(default_memory.stem + '.implementation.json'),
+                                 default_memory.with_name(default_memory.stem + '.implementation.html')]
+                                if args.quick_audit else [])
+        if args.quick_audit and args.output and args.output.resolve() in {p.resolve() for p in full_audit_artifacts}:
+            raise ReviewError('Quick audit output must not overwrite ordinary audit artifacts')
         if quick_path == quick_html_path or {quick_path, quick_html_path} & protected_results:
             raise ReviewError('Quick implementation paths must be separate from audit and implementation artifacts')
         if args.output and (args.output.resolve() == quick_path or
@@ -206,11 +218,11 @@ def run(argv, control, attach_log=None):
         if (args.quick_implementation_analysis or args.quick_implementation_report) and args.output and args.output.resolve() in protected_results:
             raise ReviewError('Quick implementation output must not overwrite audit or implementation artifacts')
         if args.trace_file:
-            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.sarif, args.log_file]
+            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.sarif, args.log_file, *full_audit_artifacts]
             if any(p is not None and args.trace_file.resolve() == p.resolve() for p in protected):
                 raise ReviewError("--trace-file must differ from audit artifacts, output and SARIF input")
         if args.log_file:
-            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.sarif, args.trace_file]
+            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.sarif, args.trace_file, *full_audit_artifacts]
             if any(p is not None and args.log_file.resolve() == p.resolve() for p in protected):
                 raise ReviewError("--log-file must differ from audit artifacts, output, SARIF input and trace files")
             if attach_log is None:
@@ -246,6 +258,10 @@ def run(argv, control, attach_log=None):
                 raise ReviewError("No saved audit memory; run a flyover first")
             log.info("Reading saved audit for offline reporting")
             saved = json.loads(memory_path.read_text())
+            if isinstance(saved, dict) and saved.get('audit_mode') == 'quick' and args.output:
+                rundown = Path(saved['quick_audit']['rundown_path'])
+                if args.output.resolve() in {rundown.resolve(), rundown.with_suffix('.html').resolve()}:
+                    raise ReviewError('Report output must not overwrite the quick rundown used by this audit')
             report = summarize(saved)
             report["memory_path"] = str(memory_path)
             if args.report:
@@ -261,7 +277,7 @@ def run(argv, control, attach_log=None):
                 sys.stdout.write(rendered)
             return 0
         exclusions = list(args.exclude)
-        for artifact in (memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.cache, args.sarif, args.trace_file, args.log_file):
+        for artifact in (memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.cache, args.sarif, args.trace_file, args.log_file, *full_audit_artifacts):
             if artifact is not None and artifact.resolve().is_relative_to(root):
                 relative = artifact.resolve().relative_to(root).as_posix()
                 exclusions.extend([relative, relative + "/*"])
@@ -269,6 +285,7 @@ def run(argv, control, attach_log=None):
         sources, targets, skipped = discover(root, args.base, exclusions, args.max_file_bytes, args.include)
         log.info("Discovery complete: %d eligible files, %d targets, %d skipped", len(sources), len(targets), len(skipped))
         control.check()
+        audit_provider, quick_plan = None, None
         if args.quick_implementation_analysis:
             from .quick_implementation import analyze
             from .reporting import write_html
@@ -289,6 +306,28 @@ def run(argv, control, attach_log=None):
             else:
                 sys.stdout.write(rendered)
             return stop_exit(report['stop_reason']) if report.get('stop_reason') else 0 if report['status'] == 'complete' else 2
+        if args.quick_audit:
+            from .quick_audit import prepare, scope_summary
+            audit_provider = make_provider()
+            quick_plan = prepare(sources, targets, audit_provider, quick_path, memory_path,
+                                 max_files=args.quick_max_files, refresh=args.rerun or args.refresh_memory)
+            if not quick_plan['selection_complete']:
+                report = {'status': 'incomplete', 'audit_mode': 'quick', 'quick_audit': scope_summary(quick_plan),
+                          'errors': quick_plan['errors'], 'memory_path': str(memory_path)}
+                from .performance import snapshot, summarize as performance_summary
+                report['usage'] = quick_plan['selection_usage_this_invocation']
+                report['performance'] = performance_summary(snapshot(audit_provider))
+                report['performance']['elapsed_seconds'] = time.monotonic() - invocation_started
+                if quick_plan.get('stop_reason'):
+                    report['stop_reason'] = quick_plan['stop_reason']
+                rendered = json.dumps(report, indent=2, ensure_ascii=True) + '\n'
+                if args.output:
+                    args.output.write_text(rendered)
+                else:
+                    sys.stdout.write(rendered)
+                return stop_exit(report['stop_reason']) if report.get('stop_reason') else 2
+            targets = quick_plan['selected_files']
+            log.info('Quick audit: %d of %d available files selected for security review', len(targets), len(quick_plan['candidate_files']))
         log.info("Building local source index")
         previous_index = json.loads(index_path.read_text()) if index_path.is_file() else None
         repository_index = build_index(sources, targets, previous_index, chunk_chars=max(32, args.batch_chars // 2 - 200), index_mode=args.index_mode)
@@ -308,7 +347,7 @@ def run(argv, control, attach_log=None):
             report = {"status": "dry_run", "targets": targets, "skipped": skipped,
                       "source_characters": sum(len(sources[p]) for p in targets)}
         else:
-            provider = make_provider()
+            provider = audit_provider or make_provider()
             from .implementation import analyze_implementation, load_implementation, review_implementation_context
             implementation = load_implementation(implementation_path, sources, targets, repository_index)
             log.info("Implementation context: %s", "compatible saved analysis available" if implementation else "no compatible saved analysis")
@@ -331,7 +370,9 @@ def run(argv, control, attach_log=None):
                 else:
                     memory, reused = flyover(sources, targets, provider, memory_path, args.refresh_memory, repository_index, implementation=implementation)
                 if args.automatic:
-                    memory['audit_mode'] = 'direct' if args.audit_only else 'mapped'
+                    memory['audit_mode'] = 'quick' if args.quick_audit else 'direct' if args.audit_only else 'mapped'
+                    if args.quick_audit:
+                        memory['quick_audit'] = quick_plan
                     save_memory(memory_path, memory)
                     if args.audit_only:
                         log.info('Direct security audit: architectural model calls skipped; saved compatible context remains available')
@@ -420,6 +461,9 @@ def run(argv, control, attach_log=None):
                     if code_lookup is None:
                         code_lookup = CodeIndex(repository_index, sources)
                     context = review_context(memory, selected)
+                    if args.quick_audit:
+                        context['summary'] = quick_plan['rundown_context']['text'][:1500]
+                        context.setdefault('unknowns', []).append(quick_plan['rundown_context']['note'])
                     implementation_context = review_implementation_context(implementation, scoped)
                     if implementation_context:
                         context["implementation_analysis"] = implementation_context
@@ -485,6 +529,10 @@ def run(argv, control, attach_log=None):
                 report["memory_path"] = str(memory_path)
                 report["memory_reused"] = reused
                 report["usage"] = {k: getattr(provider, k, 0) for k in ("calls", "cache_hits", "input_tokens", "output_tokens", "retries")}
+        if args.quick_audit:
+            from .quick_audit import scope_summary
+            report['quick_audit'] = scope_summary(quick_plan)
+            report['audit_mode'] = 'quick'
         if hasattr(control, "performance_provider"):
             from .performance import snapshot, summarize as performance_summary
             report["performance"] = performance_summary(snapshot(control.performance_provider))

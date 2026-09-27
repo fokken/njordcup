@@ -51,6 +51,22 @@ def synthesis_section(report):
             'not an additional source review. Original analyses and coverage remain below.</p>' + text + '</section>')
 
 
+def quick_audit_section(summary):
+    scope = summary.get('quick_audit')
+    if not scope:
+        return ''
+    paths = ''.join(f'<li>{e(path)}</li>' for path in scope['selected_files'])
+    notes = ''.join(f'<pre>{e(text)}</pre>' for text in scope.get('selection_notes', []))
+    errors = ''.join(f'<p>{e(text)}</p>' for text in scope.get('errors', []))
+    return (f'<section><h2>Quick audit: prioritized subset</h2><p>{e(scope["scope_note"])}</p>'
+            f'<p>{len(scope["selected_files"])} selected targets out of {scope["available_files"]} available files; '
+            f'{scope["not_selected_files"]} files outside this audit scope. File limit: {e(scope["file_limit"])}.</p>'
+            f'<p>Selection complete: {e(scope["selection_complete"])}. Rundown: {e(scope["rundown_path"])}. '
+            f'Rundown excerpt truncated: {e(scope.get("rundown_context_truncated", False))}.</p>{errors}'
+            f'<h3>Selected target files</h3><ul>{paths}</ul>'
+            f'<details><summary>Model selection responses (not verified findings)</summary>{notes}</details></section>')
+
+
 def performance_section(summary):
     rows = []
     for area in summary.get('areas', []):
@@ -134,6 +150,7 @@ def render_html(summary):
 <p>{e(summary['summary'])}</p><p class="muted">Audit status: {e(summary['audit_status'])} · Generated {e(now)}<br>
 Last saved review: {e(summary.get('last_review_at') or 'No focused reviews yet')}</p>
 <p>Saved snapshot only. Read the analyses for potential vulnerabilities, evidence, impact and remediation. Model observations require human assessment. Coverage records processing, not proof of security.</p></header>
+{quick_audit_section(summary)}
 {synthesis_section(summary)}
 <div class="metrics">{metrics}</div>
 {analysis_section}

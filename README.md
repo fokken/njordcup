@@ -41,6 +41,8 @@ Use `--automatic` to audit all source components without prompts. Generate an of
 HTML security report with `python3 -m njordcup /path/to/repo --report`.
 Use [`--audit-only`](docs/getting-started.md#direct-security-audit) to go straight
 from local indexing into security review, skipping architectural model calls.
+Use [`--quick-audit --quick-max-files 20`](docs/quick-audit.md) to let the model
+prioritize a subset using a saved quick codebase rundown.
 Use `--implementation-analysis` to describe the code and `--implementation-report`
 to generate its separate HTML report. Add `--synthesize` and your model settings to
 either report command for a saved AI executive summary.
@@ -57,6 +59,7 @@ selects up to 50 files and produces one collective analysis and HTML report.
 - [Semgrep SARIF](docs/sarif.md): importing findings, investigating all results, and resuming.
 - [Implementation analysis](docs/implementation-analysis.md): saved implementation descriptions and security reuse.
 - [Quick implementation analysis](docs/quick-implementation.md): model-selected file samples and one collective codebase rundown.
+- [Quick audit](docs/quick-audit.md): prioritize a limited set of files using the saved rundown.
 - [HTML reports](docs/reporting.md): formatted findings, evidence, and coverage.
 - [Memory and summaries](docs/memory.md): checkpoints, history, and invalidation.
 - [Architecture and coverage](docs/architecture.md): indexing, retrieval, and limitations.

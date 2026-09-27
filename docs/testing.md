@@ -86,6 +86,11 @@ Quick implementation tests cover model-selected inventory paging, the global fil
 limit, collective synthesis input, invalid choices, bounded prefix samples, overflow
 recovery, checkpoint resumption, artifact isolation and escaped offline HTML.
 
+Quick-audit tests cover rundown-based selection, targets outside the rundown sample,
+full selected-file chunk coverage, subset reports, shared selection/review budgets,
+resumption, changed limits, invalid choices, stale rundowns, structured review and
+protection of full-audit memory and rundown artifacts.
+
 ## Related guides
 
 - [Resource planning and benchmarks](resource-planning.md)

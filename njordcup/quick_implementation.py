@@ -3,13 +3,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import logging
-import re
 
 from .errors import ContextBudgetExceeded, ReviewError, RunStopped
 from .flyover import fingerprint, provider_identity
 from .memory import save_memory
 from .narrative import Narrative
 from .synthesis import digest, synthesize
+from .selection import partition as partition_entries, select_files
 
 log = logging.getLogger(__name__)
 SELECT = {'type': 'object', 'properties': {'quick_selection': {'type': 'string'}}}
@@ -35,7 +35,6 @@ def analyze(sources, targets, provider, path, max_files=50, refresh=False):
     report.pop('stop_reason', None)
     inventory = [{'id': i, 'path': p, 'lines': len(sources[p].splitlines()), 'characters': len(sources[p])}
                  for i, p in enumerate(sorted(targets), 1)]
-    files = {entry['id']: entry['path'] for entry in inventory}
 
     def checkpoint():
         inspected = {p for node in report['inspection_nodes'].values() for p in node['paths']}
@@ -54,60 +53,10 @@ def analyze(sources, targets, provider, path, max_files=50, refresh=False):
         save_memory(path, report)
 
     def partition(entries, payload, schema):
-        pages, page = [], []
-        for entry in entries:
-            provider.control.check()
-            if page and (len(page) >= 200 or not provider.fits('', payload(page + [entry]), schema)):
-                pages.append(page)
-                page = []
-            if not provider.fits('', payload([entry]), schema):
-                raise ContextBudgetExceeded('One inventory entry or source sample cannot fit; adjust input/output budgets')
-            page.append(entry)
-        if page:
-            pages.append(page)
-        return pages
+        return partition_entries(entries, payload, schema, provider)
 
     def choose(entries):
-        for level in range(20):
-            def payload(page):
-                return {'stage': 'choose_representative_files', 'inventory': page,
-                        'selection_limit': max_files, 'selection_attempt': 1,
-                        'goal': 'Broad codebase rundown: cover distinct modules, manifests, documentation, entry points and core behavior.'}
-            pages = partition(entries, payload, SELECT)
-            selected = []
-            for page in pages:
-                data = payload(page)
-                if len(pages) > 1:
-                    data['selection_limit'] = min(max_files, max(1, len(page) // 2))
-                key = digest(data)
-                saved = report['selection_nodes'].get(key, {})
-                if saved.get('complete'):
-                    selected.extend(saved['selected_ids'])
-                    continue
-                log.info('Quick implementation: choosing from %d inventory entries', len(page))
-                data['selection_attempt'] = saved.get('attempt', 0) + 1
-                response = provider.ask('', data, SELECT)
-                if not isinstance(response, Narrative):
-                    raise ReviewError('Quick implementation selection requires a text response')
-                node = {**response.record(), 'complete': False, 'attempt': data['selection_attempt'],
-                        'paths': [entry['path'] for entry in page], 'selected_ids': []}
-                report['selection_nodes'][key] = node
-                checkpoint()
-                ids = list(dict.fromkeys(int(v) for v in re.findall(r'(?im)^\s*(?:[-*]\s*)?FILE\s+(\d+)\b', str(response))))
-                allowed = {entry['id'] for entry in page}
-                if not response.complete or not ids or len(ids) > data['selection_limit'] or not set(ids) <= allowed:
-                    raise ReviewError('File selection was unfinished or invalid; expected FILE <id> lines from the supplied inventory within selection_limit. Response saved; rerun to retry.')
-                node.update(complete=True, selected_ids=ids)
-                selected.extend(ids)
-                checkpoint()
-            selected = list(dict.fromkeys(selected))
-            if len(selected) <= max_files:
-                return [files[i] for i in selected]
-            if len(selected) >= len(entries):
-                raise ReviewError('Inventory cannot be narrowed within this input budget; increase input limits or narrow --include scope')
-            selected_set = set(selected)
-            entries = [entry for entry in entries if entry['id'] in selected_set]
-        raise ReviewError('File selection reduction limit reached; narrow the source scope')
+        return select_files(entries, provider, max_files, report['selection_nodes'], checkpoint, SELECT)
 
     checkpoint()
     try:

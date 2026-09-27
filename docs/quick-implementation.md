@@ -15,6 +15,9 @@ HTML report automatically. It is a standalone orientation tool for the user; its
 result is not automatically supplied to security audits. The existing
 [`--implementation-analysis`](implementation-analysis.md) remains available for
 component-based descriptions that can support later audits.
+To explicitly use this rundown to prioritize a limited security audit, run
+[`--quick-audit --quick-max-files N`](quick-audit.md). That action selects its own
+targets and keeps its audit memory separate.
 
 ## How it works
 
