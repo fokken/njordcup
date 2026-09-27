@@ -2,6 +2,10 @@
 
 [Back to README](../README.md)
 
+For a standalone, broad rundown based on up to 50 model-selected files, use
+[`--quick-implementation-analysis`](quick-implementation.md). The mode described
+below samples component pages and can supply context to later security reviews.
+
 Describe how the project works before investigating security issues:
 
 ```sh

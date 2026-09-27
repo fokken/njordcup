@@ -5,9 +5,13 @@ import os
 import tempfile
 
 
-def write_html(path, summary, implementation=False):
+def write_html(path, summary, implementation=False, quick=False):
     """Replace reports atomically with private permissions, like audit memory."""
-    rendered = render_implementation_html(summary) if implementation else render_html(summary)
+    if quick:
+        from .quick_implementation import render_html as render_quick
+        rendered = render_quick(summary)
+    else:
+        rendered = render_implementation_html(summary) if implementation else render_html(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:

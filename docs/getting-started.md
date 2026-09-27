@@ -122,6 +122,11 @@ reviews. Generate the HTML report with the usual `--report` command.
 
 ## Other workflows
 
+For a standalone overview instead of an audit, run
+`--quick-implementation-analysis --quick-max-files 50` with your model settings.
+It selects representative files and automatically writes one collective HTML
+report; see [quick implementation analysis](quick-implementation.md).
+
 ```sh
 # Local index only: no credentials or model calls.
 python3 -m njordcup /path/to/repo --index-only

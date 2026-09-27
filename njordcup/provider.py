@@ -196,8 +196,10 @@ class OpenAIProvider:
     def ask(self, instructions, payload, schema):
         from .performance import COUNTERS
         properties = schema.get('properties', {})
-        phase = ('file_consolidation' if 'file_synthesis' in properties else
-                 'report_synthesis' if 'report_synthesis' in properties else
+        phase = ('quick_selection' if 'quick_selection' in properties else
+                 'quick_implementation' if 'quick_implementation' in properties else
+                 'file_consolidation' if 'file_synthesis' in properties else
+                 'report_synthesis' if 'report_synthesis' in properties or 'quick_synthesis' in properties else
                  'implementation' if 'languages' in properties else
                  'flyover' if 'areas' in properties else 'review')
         names = {'attempts': 'calls', 'cache_hits': 'cache_hits', 'retries': 'retries',

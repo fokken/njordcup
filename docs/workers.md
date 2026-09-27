@@ -28,7 +28,7 @@ same time. New files are assigned as workers finish. There are at most N active
 file jobs and HTTP attempts at once, and fewer when an area has fewer pending files.
 
 Areas themselves remain sequential. Indexing, architectural flyover, SARIF
-investigations, implementation analysis and report-wide synthesis also remain
+investigations, both implementation-analysis modes and report-wide synthesis also remain
 sequential; increasing `--workers` does not parallelize those operations. File
 consolidation is part of the file job and can overlap another file's source review.
 

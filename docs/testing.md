@@ -82,6 +82,10 @@ coordinator-only checkpoint callbacks, cancellation/deadlines, failed persistenc
 consolidation resumption, overflow recovery, trace integrity, cache accounting and
 the CLI report workflow. They use mocked transport, not live-model speed measurements.
 
+Quick implementation tests cover model-selected inventory paging, the global file
+limit, collective synthesis input, invalid choices, bounded prefix samples, overflow
+recovery, checkpoint resumption, artifact isolation and escaped offline HTML.
+
 ## Related guides
 
 - [Resource planning and benchmarks](resource-planning.md)

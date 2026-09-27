@@ -39,7 +39,9 @@ def synthesize(report, saved, provider, checkpoint):
         log.info('Reusing saved report synthesis')
         return state
     schema = {'type': 'object', 'properties': {'file_synthesis': {'type': 'string'}}} if report.get('kind') == 'file_security_analysis' else SCHEMA
-    kind = 'implementation' if report.get('kind') == 'implementation_analysis' else 'security'
+    if report.get('kind') == 'quick_implementation_analysis':
+        schema = {'type': 'object', 'properties': {'quick_synthesis': {'type': 'string'}}}
+    kind = 'implementation' if report.get('kind') in {'implementation_analysis', 'quick_implementation_analysis'} else 'security'
 
     def payload(parts, stage):
         return {'report_kind': kind, 'stage': stage, 'saved_analysis_fragments': parts}

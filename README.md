@@ -44,6 +44,8 @@ from local indexing into security review, skipping architectural model calls.
 Use `--implementation-analysis` to describe the code and `--implementation-report`
 to generate its separate HTML report. Add `--synthesize` and your model settings to
 either report command for a saved AI executive summary.
+For a standalone codebase rundown, use `--quick-implementation-analysis`: the model
+selects up to 50 files and produces one collective analysis and HTML report.
 
 ## Documentation
 
@@ -54,6 +56,7 @@ either report command for a saved AI executive summary.
 - [Concurrent workers](docs/workers.md): parallel file reviews, shared budgets, and resumption.
 - [Semgrep SARIF](docs/sarif.md): importing findings, investigating all results, and resuming.
 - [Implementation analysis](docs/implementation-analysis.md): saved implementation descriptions and security reuse.
+- [Quick implementation analysis](docs/quick-implementation.md): model-selected file samples and one collective codebase rundown.
 - [HTML reports](docs/reporting.md): formatted findings, evidence, and coverage.
 - [Memory and summaries](docs/memory.md): checkpoints, history, and invalidation.
 - [Architecture and coverage](docs/architecture.md): indexing, retrieval, and limitations.

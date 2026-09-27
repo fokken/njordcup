@@ -92,6 +92,10 @@ def run(argv, control, attach_log=None):
     parser.add_argument("--implementation-analysis", action="store_true", help="Describe implementation and functionality in a separate saved result")
     parser.add_argument("--implementation-report", action="store_true", help="Generate an offline HTML report of saved implementation analysis")
     parser.add_argument("--implementation-file", type=Path, help="Implementation-analysis result to save or reuse")
+    parser.add_argument('--quick-implementation-analysis', action='store_true', help='Model-selected shallow codebase rundown with one collective report; separate from audits')
+    parser.add_argument('--quick-implementation-report', action='store_true', help='Render saved quick implementation analysis as offline HTML')
+    parser.add_argument('--quick-implementation-file', type=Path, help='Separate quick implementation result file')
+    parser.add_argument('--quick-max-files', type=positive, default=50, help='Maximum distinct files inspected by quick implementation analysis (default: 50)')
     parser.add_argument("--report", action="store_true", help="Generate an offline HTML report from saved memory")
     parser.add_argument("--synthesize", action="store_true", help="Generate or resume AI executive synthesis with --report or --implementation-report")
     parser.add_argument("--rerun", action="store_true", help="Start selected reviews afresh instead of resuming checkpoints")
@@ -114,13 +118,19 @@ def run(argv, control, attach_log=None):
     invocation_started = time.monotonic()
     args = parser.parse_args(argv)
     args.automatic = args.automatic or args.audit_only
+    if args.quick_implementation_analysis or args.quick_implementation_report:
+        if (args.quick_implementation_analysis and args.quick_implementation_report) or any((
+                args.automatic, args.area, args.flyover_only, args.summary, args.report, args.dry_run,
+                args.index_only, args.investigate_all, args.sarif, args.implementation_analysis,
+                args.implementation_report, args.synthesize)):
+            parser.error('Quick implementation actions cannot be combined with other action selectors or --synthesize')
     logging.getLogger("njordcup").setLevel(logging.DEBUG if args.verbose else logging.WARNING if args.quiet else logging.INFO)
     if args.max_seconds:
         control.deadline = time.monotonic() + args.max_seconds
     root = args.repository.resolve()
     if not root.is_dir():
         parser.error("repository must be a directory")
-    if not args.dry_run and not args.summary and not args.report and not args.implementation_report and not args.index_only and not args.model:
+    if not args.dry_run and not args.summary and not args.report and not args.implementation_report and not args.quick_implementation_report and not args.index_only and not args.model:
         parser.error("specify --model or REVIEW_MODEL")
     if args.area and (args.flyover_only or args.refresh_memory):
         parser.error("--area cannot be combined with --flyover-only or --refresh-memory")
@@ -185,18 +195,36 @@ def run(argv, control, attach_log=None):
         if args.output and args.output.resolve() == implementation_path and not args.implementation_analysis:
             raise ReviewError("--output must not overwrite saved implementation analysis")
         implementation_html_path = implementation_path.with_suffix(".html")
+        quick_path = (args.quick_implementation_file or memory_path.with_name(memory_path.stem + '.quick-implementation.json')).resolve()
+        quick_html_path = quick_path.with_suffix('.html')
+        protected_results = {memory_path, index_path, html_path, implementation_path, implementation_html_path}
+        if quick_path == quick_html_path or {quick_path, quick_html_path} & protected_results:
+            raise ReviewError('Quick implementation paths must be separate from audit and implementation artifacts')
+        if args.output and (args.output.resolve() == quick_path or
+                            (args.output.resolve() == quick_html_path and not args.quick_implementation_report)):
+            raise ReviewError('--output must not overwrite quick implementation results; use --quick-implementation-file')
+        if (args.quick_implementation_analysis or args.quick_implementation_report) and args.output and args.output.resolve() in protected_results:
+            raise ReviewError('Quick implementation output must not overwrite audit or implementation artifacts')
         if args.trace_file:
-            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.sarif, args.log_file]
+            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.sarif, args.log_file]
             if any(p is not None and args.trace_file.resolve() == p.resolve() for p in protected):
                 raise ReviewError("--trace-file must differ from audit artifacts, output and SARIF input")
         if args.log_file:
-            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.sarif, args.trace_file]
+            protected = [memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.sarif, args.trace_file]
             if any(p is not None and args.log_file.resolve() == p.resolve() for p in protected):
                 raise ReviewError("--log-file must differ from audit artifacts, output, SARIF input and trace files")
             if attach_log is None:
                 raise ReviewError('--log-file requires the CLI logging session')
             attach_log(args.log_file)
             log.info("Runtime log opened: %r", str(args.log_file))
+        if args.quick_implementation_report:
+            if not quick_path.is_file():
+                raise ReviewError('No saved quick implementation analysis; run --quick-implementation-analysis first')
+            from .reporting import write_html
+            destination = args.output or quick_html_path
+            write_html(destination, json.loads(quick_path.read_text()), quick=True)
+            print(f'Quick implementation HTML report saved to {destination}')
+            return 0
         if args.implementation_report:
             if not implementation_path.is_file():
                 raise ReviewError("No saved implementation analysis; run --implementation-analysis first")
@@ -233,7 +261,7 @@ def run(argv, control, attach_log=None):
                 sys.stdout.write(rendered)
             return 0
         exclusions = list(args.exclude)
-        for artifact in (memory_path, index_path, html_path, implementation_path, implementation_html_path, args.output, args.cache, args.sarif, args.trace_file, args.log_file):
+        for artifact in (memory_path, index_path, html_path, implementation_path, implementation_html_path, quick_path, quick_html_path, args.output, args.cache, args.sarif, args.trace_file, args.log_file):
             if artifact is not None and artifact.resolve().is_relative_to(root):
                 relative = artifact.resolve().relative_to(root).as_posix()
                 exclusions.extend([relative, relative + "/*"])
@@ -241,6 +269,26 @@ def run(argv, control, attach_log=None):
         sources, targets, skipped = discover(root, args.base, exclusions, args.max_file_bytes, args.include)
         log.info("Discovery complete: %d eligible files, %d targets, %d skipped", len(sources), len(targets), len(skipped))
         control.check()
+        if args.quick_implementation_analysis:
+            from .quick_implementation import analyze
+            from .reporting import write_html
+            from .performance import snapshot, summarize as performance_summary
+            provider = make_provider(synthesis=True)  # This mode always accepts prose.
+            report = analyze(sources, targets, provider, quick_path, max_files=args.quick_max_files,
+                             refresh=args.rerun or args.refresh_memory)
+            report.update(result_path=str(quick_path), html_path=str(quick_html_path), skipped=skipped)
+            report['performance'] = performance_summary(snapshot(provider))
+            report['performance']['elapsed_seconds'] = time.monotonic() - invocation_started
+            save_memory(quick_path, report)
+            if not report.get('stop_reason'):
+                write_html(quick_html_path, report, quick=True)
+                log.info('Quick implementation HTML report saved to %r', str(quick_html_path))
+            rendered = json.dumps(report, indent=2, ensure_ascii=True) + '\n'
+            if args.output:
+                args.output.write_text(rendered)
+            else:
+                sys.stdout.write(rendered)
+            return stop_exit(report['stop_reason']) if report.get('stop_reason') else 0 if report['status'] == 'complete' else 2
         log.info("Building local source index")
         previous_index = json.loads(index_path.read_text()) if index_path.is_file() else None
         repository_index = build_index(sources, targets, previous_index, chunk_chars=max(32, args.batch_chars // 2 - 200), index_mode=args.index_mode)
