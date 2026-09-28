@@ -33,7 +33,11 @@ It is asked to prioritize entry points, authentication/authorization, tenant
 boundaries, untrusted inputs, uploads, sensitive operations, secrets, cryptography
 and security configuration, with a reason for each choice.
 
-Large inventories are paged and shortlists narrowed in bounded model passes. Choices
+Inventory pages contain compact IDs and paths, filling the configured input/context
+budget with output tokens and the token margin reserved. There is no fixed 200-file
+cap. Large inventories are paged and shortlists narrowed in bounded model passes;
+only nominees from each page advance. Logs distinguish inventory and shortlist
+rounds and show page counts and candidate totals. Choices
 use inventory IDs and are validated before any security review starts. The global
 limit applies to distinct selected targets, not to each page or component. The model
 can select fewer than the limit. Selection reasons are saved as unverified model text.

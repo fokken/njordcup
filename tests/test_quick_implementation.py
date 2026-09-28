@@ -66,6 +66,44 @@ class QuickImplementationTests(unittest.TestCase):
         self.assertLessEqual(result['coverage']['files_inspected'], 5)
         self.assertEqual(result['coverage']['inventory_files_shown'], 240)
 
+    def test_inventory_above_200_fits_in_one_selection_request(self):
+        sources = {f'module{i:04d}/handler.py': 'handle()' for i in range(1000)}
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp, patch('urllib.request.build_opener') as opener:
+            opener.return_value.open.side_effect = self.responder(calls)
+            result = analyze(sources, list(sources), provider(), Path(tmp) / 'quick.json', max_files=5)
+        self.assertEqual(result['status'], 'complete')
+        selections = [p for p in calls if 'inventory' in p]
+        self.assertEqual(len(selections), 1)
+        self.assertEqual(len(selections[0]['inventory']), 1000)
+        self.assertTrue(all(set(entry) == {'id', 'path'} for entry in selections[0]['inventory']))
+        self.assertEqual(result['coverage']['files_described'], 5)
+
+    def test_4000_files_obey_context_budget_and_log_shortlist_progress(self):
+        sources = {f'module{i:04d}/handler.py': 'handle()' for i in range(4000)}
+        calls = []
+        p = provider(max_input_chars=80000, context_window=32768, max_tokens=4096)
+        respond = self.responder(calls)
+        def send(request, **kwargs):
+            chars, tokens = p.request_size(json.loads(request.data))
+            self.assertLessEqual(chars, p.max_input_chars)
+            self.assertLessEqual(tokens + p.max_tokens + p.token_margin, p.context_window)
+            return respond(request, **kwargs)
+        with tempfile.TemporaryDirectory() as tmp, patch('urllib.request.build_opener') as opener, \
+                self.assertLogs('njordcup.selection', level='INFO') as logs:
+            opener.return_value.open.side_effect = send
+            result = analyze(sources, list(sources), p, Path(tmp) / 'quick.json', max_files=5)
+        self.assertEqual(result['status'], 'complete')
+        selections = [data for data in calls if 'inventory' in data]
+        self.assertLess(len(selections), 20)
+        self.assertGreater(max(len(data['inventory']) for data in selections), 200)
+        self.assertEqual({entry['path'] for data in selections for entry in data['inventory']}, set(sources))
+        self.assertEqual(result['coverage']['inventory_files_shown'], 4000)
+        self.assertEqual(result['coverage']['files_described'], 5)
+        self.assertTrue(any('(inventory): 4000 candidates' in line for line in logs.output))
+        self.assertTrue(any('(shortlist)' in line for line in logs.output))
+        self.assertTrue(any('page 1/' in line for line in logs.output))
+
     def test_invalid_selection_is_saved_and_does_not_read_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'quick.json'

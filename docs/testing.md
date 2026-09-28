@@ -85,6 +85,9 @@ the CLI report workflow. They use mocked transport, not live-model speed measure
 Quick implementation tests cover model-selected inventory paging, the global file
 limit, collective synthesis input, invalid choices, bounded prefix samples, overflow
 recovery, checkpoint resumption, artifact isolation and escaped offline HTML.
+Paging regressions cover a 1,000-file inventory in one selection call and all 4,000
+paths across context-bounded requests, including shortlist progress and the global
+selection limit. These use mocked model responses, not live performance measurements.
 
 Quick-audit tests cover rundown-based selection, targets outside the rundown sample,
 full selected-file chunk coverage, subset reports, shared selection/review budgets,

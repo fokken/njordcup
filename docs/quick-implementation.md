@@ -22,10 +22,12 @@ targets and keeps its audit memory separate.
 ## How it works
 
 1. Discover eligible files using the usual source filters. The model receives a
-   file inventory containing paths, numeric IDs, line counts and character counts.
+   compact file inventory containing paths and numeric IDs.
    It does not receive file contents at this selection stage.
 2. Ask the model to choose representative manifests, documentation, entry points,
-   configuration and core modules. Large inventories are paged. If their combined
+   configuration and core modules. Inventory pages fit as many entries as the
+   configured input/context budget allows, reserving output tokens and the token
+   margin; there is no fixed 200-file cap. If their combined
    nominations exceed the file limit, the model narrows the shortlist in further
    bounded passes. No source is sent until a final selection within the limit is
    saved. The model may choose fewer than the limit.
@@ -38,6 +40,11 @@ targets and keeps its audit memory separate.
    architecture, languages, stack, functionality, entry points, integrations and
    data flow, plus an annotated list explaining every selected file's role.
    If the input is too large, bounded intermediate summaries are combined.
+
+Selection logs show the round, inventory or shortlist stage, page count, and number
+of candidates. Thousands of paths can still require several calls under a small
+context budget. Only nominees advance to later rounds; discarded files are not
+reconsidered in the final shortlist.
 
 The report preserves the exact selected-file list, sample sizes, truncation details
 and original observations alongside the collective analysis. Summarization can lose
