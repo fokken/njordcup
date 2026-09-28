@@ -12,7 +12,8 @@ python3 -m njordcup /path/to/repo --index-only
 The default `--index-mode auto` automatically uses installed Tree-sitter grammars
 for JavaScript (including JSX), TypeScript/TSX, Go, Rust, Java, C and C++.
 Python retains its standard-library AST parser. No parser packages are downloaded
-at runtime, and the basic installation still has no runtime dependencies.
+at runtime. Python 3.10 additionally uses `tomli` for configuration parsing;
+Python 3.11+ provides that parser in its standard library.
 
 Tree-sitter provides syntactic function, method and class ranges and call names.
 Those ranges guide the existing bounded chunker; long functions still split to fit

@@ -7,7 +7,7 @@ name = "njordcup"
 version = "0.1.0"
 description = "Bounded, evidence-based AI security review for local repositories"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["tomli>=2; python_version < '3.11'"]
 
 [project.optional-dependencies]
 syntax = [

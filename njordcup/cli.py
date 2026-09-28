@@ -60,8 +60,13 @@ def stop_exit(reason):
     return {"cancelled": 130, "sigterm": 143, "deadline": 124}.get(reason, 2)
 
 
-def run(argv, control, attach_log=None):
-    parser = argparse.ArgumentParser(prog="njordcup", description="Review code for evidence-backed security issues")
+def build_parser():
+    parser = argparse.ArgumentParser(prog="njordcup", description="Review code for evidence-backed security issues",
+                                     allow_abbrev=False, epilog='Use --help-all for provider, context, retry, cache and logging settings.')
+    parser.add_argument('--config', type=Path, help='Explicit TOML configuration file')
+    parser.add_argument('--no-config', action='store_true', help='Ignore the user configuration file')
+    parser.add_argument('--profile', help='Named model profile from configuration')
+    parser.add_argument('--help-all', action='store_true', help='Show all options, including advanced settings')
     parser.add_argument("repository", type=Path, nargs="?", default=Path.cwd())
     parser.add_argument("--base", help="Review changed working-tree files relative to this Git commit")
     parser.add_argument("--model", default=os.getenv("REVIEW_MODEL"))
@@ -116,8 +121,14 @@ def run(argv, control, attach_log=None):
     verbosity.add_argument("--quiet", action="store_true", help="Suppress progress logs; keep warnings, errors and finding notifications")
     parser.add_argument("--trace-file", type=Path, help="Opt-in full request/response JSONL trace (contains source and model output; no HTTP headers)")
     parser.add_argument("--log-file", type=Path, help="Append runtime logs and stderr notifications to a text file as well as the terminal")
+    return parser
+
+
+def run(argv, control, attach_log=None):
+    parser = build_parser()
     invocation_started = time.monotonic()
-    args = parser.parse_args(argv)
+    from .configuration import parse_configuration
+    args = parse_configuration(parser, argv)
     if args.quick_audit and (args.automatic or args.audit_only):
         parser.error('--quick-audit is a separate action; do not combine it with --automatic or --audit-only')
     args.audit_only = args.audit_only or args.quick_audit
@@ -135,7 +146,7 @@ def run(argv, control, attach_log=None):
     if not root.is_dir():
         parser.error("repository must be a directory")
     if not args.dry_run and not args.summary and not args.report and not args.implementation_report and not args.quick_implementation_report and not args.index_only and not args.model:
-        parser.error("specify --model or REVIEW_MODEL")
+        parser.error("specify --model, REVIEW_MODEL, or a model in configuration")
     if args.area and (args.flyover_only or args.refresh_memory):
         parser.error("--area cannot be combined with --flyover-only or --refresh-memory")
     if args.summary and (args.area or args.flyover_only or args.refresh_memory or args.dry_run):

@@ -94,6 +94,10 @@ full selected-file chunk coverage, subset reports, shared selection/review budge
 resumption, changed limits, invalid choices, stale rundowns, structured review and
 protection of full-audit memory and rundown artifacts.
 
+Configuration tests cover user-file discovery, explicit files, profile and CLI
+precedence, typed validation, configuration-relative paths, help with broken
+configuration, and rejection of implicit repository configuration.
+
 ## Related guides
 
 - [Resource planning and benchmarks](resource-planning.md)

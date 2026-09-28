@@ -1,7 +1,8 @@
 # njordcup
 
 A Python 3.10+ security review CLI for Ollama, vLLM, and other OpenAI-compatible
-APIs. No runtime Python dependencies are required.
+APIs. Python 3.11+ needs no base runtime dependencies; Python 3.10 uses `tomli`
+for TOML configuration.
 
 **Index → flyover → saved memory → focused investigations → audit summary.**
 
@@ -22,6 +23,9 @@ for a parameter table and ready-to-run automatic audit commands.
 
 Run from this checkout, or install with `pip install -e .` for the `njordcup` command.
 Replace `YOUR_MODEL` with a model served by your endpoint.
+
+Save model and budget defaults in a [TOML configuration with named profiles](docs/configuration.md#configuration-file)
+to avoid repeating flags. Use `--help` for common options or `--help-all` for every setting.
 
 ```sh
 # Map the codebase and choose an area to investigate.

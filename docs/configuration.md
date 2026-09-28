@@ -2,6 +2,81 @@
 
 [Back to README](../README.md)
 
+## Configuration file
+
+Store persistent settings in `~/.config/njordcup/config.toml` (or
+`$XDG_CONFIG_HOME/njordcup/config.toml` when `XDG_CONFIG_HOME` is absolute).
+Njordcup never searches the audited repository for configuration. `--config PATH`
+loads a different file **instead of** the user file; `--no-config` disables file
+loading. Missing automatic configuration is fine; a missing explicit file is an error.
+
+```toml
+default_profile = "local-32k"
+
+[settings]
+output_mode = "prompt"
+workers = 1
+request_timeout = 120
+max_retries = 2
+
+[profiles.local-32k]
+base_url = "http://localhost:11434/v1"
+api_key_env = "OLLAMA_API_KEY"
+model = "YOUR_MODEL"
+context_window = 32768
+max_tokens = 4096
+max_input_chars = 24000
+batch_chars = 10000
+context_chars = 6000
+
+[profiles.local-64k]
+base_url = "http://localhost:11434/v1"
+api_key_env = "OLLAMA_API_KEY"
+model = "YOUR_MODEL"
+context_window = 65536
+max_tokens = 6000
+max_input_chars = 48000
+batch_chars = 20000
+context_chars = 10000
+```
+
+```sh
+njordcup /path/to/repo --audit-only
+njordcup /path/to/repo --quick-implementation-analysis
+njordcup /path/to/repo --quick-audit --quick-max-files 30
+njordcup /path/to/repo --audit-only --profile local-64k --workers 2
+njordcup /path/to/repo --config /path/to/models.toml --audit-only
+```
+
+Precedence, lowest to highest: **built-in defaults → existing `REVIEW_*`
+environment defaults → `[settings]` → selected profile → explicit CLI flags**.
+Profiles inherit `[settings]`, not other profiles. `--profile NAME` replaces
+`default_profile`. Existing full CLI flags still work; `--help` shows common options
+and `--help-all` includes advanced settings. Use full flag names, not abbreviations.
+
+Allowed keys in `[settings]` and each profile use underscores:
+
+| Category | Keys |
+| --- | --- |
+| Provider | `model`, `base_url`, `api_key_env`, `output_mode` |
+| Execution | `workers`, `max_calls`, `max_seconds`, `request_timeout`, `max_retries`, `retry_base`, `retry_max_delay` |
+| Context | `context_window`, `max_tokens`, `max_input_chars`, `batch_chars`, `context_chars`, `context_rounds`, `bytes_per_token`, `token_margin` |
+| Index and selection | `index_mode`, `max_file_bytes`, `quick_max_files` |
+| Storage and logs | `cache`, `log_file`, `trace_file` |
+
+Numeric settings require TOML numbers. Unknown keys, invalid values and unknown
+profiles fail before execution. Paths in configuration resolve relative to the
+configuration file, with `~` expansion; CLI paths retain their usual working-directory
+semantics. Credentials stay in the environment: configure the variable name via
+`api_key_env`, never the secret itself. Modes, target filters, report outputs and
+memory selection remain explicit CLI options. Verbosity stays on `--verbose`/`--quiet`.
+
+Python 3.11+ reads TOML using the standard library. Installing njordcup on Python
+3.10 installs `tomli`; when running directly from a checkout on 3.10, install it
+with `python3 -m pip install tomli` to use configuration files.
+
+## Environment defaults
+
 | Flag | Environment | Default |
 | --- | --- | --- |
 | `--base-url` | `REVIEW_BASE_URL` | `https://api.openai.com/v1` |
